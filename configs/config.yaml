@@ -1,0 +1,8 @@
+defaults:
+  - _self_
+  - model: mamba_small
+  - train: default
+
+project_name: "Tessera-MambaGo"
+# 出力ディレクトリを自動で日付管理
+output_dir: "${hydra:runtime.cwd}/models/checkpoints/${now:%Y-%m-%d}/${now:%H-%M-%S}"
