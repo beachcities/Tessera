@@ -1,0 +1,13 @@
+einops==0.8.1
+sentence-transformers==5.2.0
+torch==2.9.0+cu126
+torchao==0.10.0
+torchaudio==2.9.0+cu126
+torchdata==0.11.0
+torchsummary==1.5.1
+torchtune==0.6.1
+torchvision==0.24.0+cu126
+transformers==4.57.3
+triton==3.5.0
+mamba-ssm>=2.2.6
+causal-conv1d>=1.4.0
