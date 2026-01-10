@@ -1,0 +1,10 @@
+{
+    "name": "GoMamba Local Env",
+    "build": { "dockerfile": "../Dockerfile" },
+    "runArgs": [ "--gpus", "all", "--shm-size=4g" ],
+    "customizations": {
+      "vscode": {
+        "extensions": [ "ms-python.python", "ms-toolsai.jupyter" ]
+      }
+    }
+  }
