@@ -1,0 +1,19 @@
+# Basics
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints
+.env
+.venv
+
+# Logs
+*.log
+logs/
+wandb/
+
+# Artifacts (Colabの貴重なストレージを圧迫しないよう、大容量ファイルは除外)
+*.safetensors
+*.pt
+*.ckpt
+data/raw/*.sgf
+data/processed/*.bin
+models/checkpoints/

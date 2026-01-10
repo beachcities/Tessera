@@ -1,0 +1,4 @@
+d_model: 256
+n_layers: 16
+d_state: 16
+vocab_size: 362  # 19x19 + pass

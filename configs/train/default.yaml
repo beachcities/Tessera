@@ -1,0 +1,5 @@
+batch_size: 64
+learning_rate: 1e-4
+max_epochs: 10
+save_top_k: 3
+monitor: "val_loss"
