@@ -20,3 +20,4 @@ models/checkpoints/checkpoints/*.pth
 logs/
 checkpoints/*.pth
 logs/
+venv/
