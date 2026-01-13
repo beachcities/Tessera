@@ -16,4 +16,7 @@ wandb/
 *.ckpt
 data/raw/*.sgf
 data/processed/*.bin
-models/checkpoints/
+models/checkpoints/checkpoints/*.pth
+logs/
+checkpoints/*.pth
+logs/
