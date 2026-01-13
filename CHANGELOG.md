@@ -1,125 +1,94 @@
 # Changelog
 
-All notable changes to Tessera will be documented in this file.
+All notable changes to Tessera (MambaGo) will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
+
+---
 
 ## [Unreleased]
 
 ### Planned
-- Phase III: Connected Components (連の完全実装)
-- Phase III: 地の計算
-- External engine evaluation (GnuGo/KataGo)
+- Phase III: ルールエンジン改善（連の完全実装、終局判定）
+- 19^4 テンソル表現の理論的検証
 
 ---
 
-## [0.4.1] - 2026-01-13
+## [0.3.0] - 2026-01-14
 
-### Fixed
-- **Critical: MambaStateCapture memory leak**
-  - Disabled `MambaStateCapture` in `ParallelTrainer`
-  - Root cause of OOM after 3 ELO evaluations
-  - Single line fix enabled 100,000 game completion
+### Phase II-c 完了: 200,000 ゲーム学習
 
-### Added
-- VRAM monitoring in logs (debug mode)
+#### 実績
+- **総ゲーム数:** 200,096
+- **総手数:** 34,779,675
+- **学習時間:** 2.17 時間
+- **最終 ELO:** 1496
+- **最高 ELO:** 1517
+- **Loss 推移:** 5.89（理論値）→ 5.4（ピーク）→ 2.3（最低）→ 4.0（最終）
 
----
+#### Added
+- `long_training_v4.py`: 長期学習スクリプト（ELO 評価、Tile チェックポイント）
+- `streamlit_dashboard.py`: リアルタイム学習可視化ダッシュボード v1.2
+- BATCH_SIZE 自動スケール（VRAM に応じて 32/64/128 を選択）
+- JST タイムゾーン対応
 
-## [0.4.0] - 2026-01-13
+#### Fixed
+- **MambaStateCapture 削除による OOM 解決**
+  - 原因: forward hook が hidden state を保持し、メモリリーク
+  - 解決: MambaStateCapture を完全削除、Mamba 内部で状態管理
+  - 効果: ELO 評価 789 回連続成功（OOM ゼロ）
+- `losses_window` のチェックポイント永続化
+- VRAMSanitizer によるメモリ管理
 
-### Added
-- **Clean Room Protocol** for ELO evaluation
-  - `VRAMSanitizer` context manager
-  - Automatic VRAM cleanup on enter/exit
-- **CPU Staging** for checkpoint loading
-  - `map_location='cpu'` prevents VRAM pollution
-  - Selective transfer of weights only
-- **Caller Responsibility** pattern
-  - Training loop releases resources before ELO
-  - Engine rebuild after evaluation
-- **ACD Checkpoint Saving**
-  - Atomicity: temp file + rename
-  - Consistency: post-save verification
-  - Durability: fsync to disk
+#### Changed
+- BATCH_SIZE: 64 → 128（8GB VRAM 環境）
+- NUM_GAMES: 100,000 → 200,000
 
-### Changed
-- `elo.py` upgraded to v1.3.0
-- `long_training_v4.py` upgraded to v4.1.0
-- ELO batch size reduced to 64 (from 32)
-
----
-
-## [0.3.0] - 2026-01-13
-
-### Added
-- **ELO Rating System** (`elo.py` v1.0.0)
-  - Bradley-Terry model
-  - Match against past checkpoints
-  - JSON Lines logging
-  - Tile-based ELO tracking
-- **Parallel Training** (`long_training_v4.py`)
-  - BATCH_SIZE = simultaneous games
-  - Individual game reset on completion
-  - Graceful shutdown with SIGINT/SIGTERM
-- **Discord Monitoring** (`monitor.sh`)
-  - Process watchdog (60s interval)
-  - Webhook notifications on failure
-
-### Changed
-- Training architecture from serial to parallel
-- Game completion triggers immediate learning
-
----
-
-## [0.2.2] - 2026-01-12
-
-### Added
-- `GPUGoEngine.reset_selected()` for partial reset
-- Temperature scheduling in training
-- Auto-scaling based on VRAM
-
-### Fixed
-- SSM divergence with norm limit (300.0)
-- Gradient clipping (0.5)
+#### Technical Notes
+- Loss の「相転移」現象を観測（175k 付近で急降下）
+- 自己対戦の性質上、Loss は収束後も変動する（正常な挙動）
+- `best_loss: 0.0000` は再開時の初期化問題（表示のみ、学習に影響なし）
 
 ---
 
 ## [0.2.0] - 2026-01-12
 
-### Added
-- **GPU Native Go Engine** (`gpu_go_engine.py`)
-  - Batched board state (batch, 2, 19, 19)
-  - Vectorized operations (no Python loops)
-  - Single stone capture
-  - Simple ko detection
-- **Mamba Model** (`model.py`)
-  - State Space Model for move prediction
-  - 4-layer architecture (d_model=256)
-- **Monitoring** (`monitor.py`)
-  - VRAM tracking
-  - SSM state norm monitoring
-  - GPU temperature alerts
+### Phase II-a/b 完了: 基盤構築と初期学習
+
+#### Added
+- GPUGoEngine: バッチ化された盤面管理
+- MambaModel: 4層 SSM、1.9M パラメータ
+- TesseraMonitor: VRAM、SSM 状態監視
+- 自己対局 + 学習ループ
+
+#### Achieved
+- 100,000 ゲーム学習完了
+- ELO 1512 達成
+- GPU 内完結アーキテクチャ確立
 
 ---
 
 ## [0.1.0] - 2026-01-11
 
-### Added
-- Initial project structure
-- Docker environment with CUDA support
-- Basic training loop
+### Phase I 完了: 環境構築
+
+#### Added
+- Docker + CUDA 12.6 + mamba-ssm 環境
+- WSL2 + RTX 4070 Laptop (8GB) 対応
+- 基本的なプロジェクト構造
 
 ---
 
-## Version Numbering
+## 設計原則
 
-- **Major (X.0.0)**: Phase completion
-- **Minor (0.X.0)**: Feature additions
-- **Patch (0.0.X)**: Bug fixes
+| 原則 | 説明 |
+|------|------|
+| GPU Complete | 全操作が GPU 内で完結、CPU 転送ゼロ |
+| Batch First | 全操作がバッチ化されたテンソル演算 |
+| No Python Loop | ループは torch 演算に置換 |
+| Clean Room | 外部棋譜を使用しない、自己対戦のみ |
+| Observable | 全ての挙動がモニター可能 |
 
 ---
 
-## Links
-
-- [Design Spec Phase II](docs/DESIGN_SPEC_PHASE_II.md)
-- [Experiment Log 2026-01-13](docs/EXPERIMENT_LOG_20260113.md)
-- [Architecture Note: GPU-Native Sovereignty](docs/ARCHITECTURE_GPU_NATIVE.md)
+*"Le symbole donne à penser."* — Paul Ricœur

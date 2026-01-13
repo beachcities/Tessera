@@ -101,7 +101,7 @@ class Config:
     """設定"""
     
     # === 基本設定 ===
-    NUM_GAMES: int = 100000          # 総ゲーム数
+    NUM_GAMES: int = 200000          # 総ゲーム数
     MAX_MOVES_PER_GAME: int = 200    # 1ゲームあたりの最大手数
     SEQ_LEN: int = 64                # シーケンス長
     
@@ -153,15 +153,15 @@ class Config:
             config.D_MODEL = 384
             config.N_LAYERS = 6
         elif vram_gb >= 20:    # RTX 3090/4090
-            config.BATCH_SIZE = 64
+            config.BATCH_SIZE = 128
             config.D_MODEL = 256
             config.N_LAYERS = 4
         elif vram_gb >= 10:    # RTX 3080
-            config.BATCH_SIZE = 64
+            config.BATCH_SIZE = 128
             config.D_MODEL = 256
             config.N_LAYERS = 4
         else:                  # RTX 4070 Laptop (8GB)
-            config.BATCH_SIZE = 64
+            config.BATCH_SIZE = 128
             config.D_MODEL = 256
             config.N_LAYERS = 4
         
@@ -197,13 +197,13 @@ class Logger:
     
     def __init__(self, log_dir: str):
         Path(log_dir).mkdir(exist_ok=True)
-        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        timestamp = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=9))).strftime("%Y%m%d_%H%M%S")
         
         self.console_log = os.path.join(log_dir, f"training_v4_{timestamp}.log")
         self.jsonl_log = os.path.join(log_dir, f"training_v4_{timestamp}.jsonl")
     
     def log(self, message: str, also_print: bool = True):
-        timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        timestamp = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=9))).strftime("%Y-%m-%d %H:%M:%S")
         line = f"[{timestamp}] {message}"
         
         if also_print:
@@ -214,7 +214,7 @@ class Logger:
     
     def log_json(self, event_type: str, data: Dict[str, Any]):
         entry = {
-            "timestamp": datetime.datetime.now().isoformat(),
+            "timestamp": datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=9))).isoformat(),
             "event": event_type,
             **data
         }
@@ -686,7 +686,7 @@ def main():
     last_checkpoint_games = trainer.stats['total_games']
     last_tile_games = trainer.stats['total_games']
     
-    losses_window = []
+    losses_window = trainer.stats.get('losses_window', [])
     
     try:
         while trainer.stats['total_games'] < config.NUM_GAMES:
@@ -756,6 +756,7 @@ def main():
                     config.CHECKPOINT_DIR,
                     f"tessera_v4_game{current_games:06d}_elo{trainer.stats['current_elo']:.0f}.pth"
                 )
+                trainer.stats['losses_window'] = losses_window
                 save_checkpoint(
                     trainer.model,
                     trainer.optimizer,
@@ -786,6 +787,7 @@ def main():
             config.CHECKPOINT_DIR,
             f"tessera_v4_final_game{current_games}_elo{trainer.stats['current_elo']:.0f}.pth"
         )
+        trainer.stats['losses_window'] = losses_window
         save_checkpoint(
             trainer.model,
             trainer.optimizer,
