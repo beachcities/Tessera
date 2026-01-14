@@ -13,7 +13,7 @@ import torch
 import torch.nn as nn
 
 
-class TesseractFusion(nn.Module):
+class TesseraFusion(nn.Module):
     """
     Mamba 出力 + RayCast 出力の後期融合
     
@@ -71,12 +71,12 @@ class TesseractFusion(nn.Module):
 if __name__ == "__main__":
     # 動作確認
     print("=" * 60)
-    print("TesseractFusion 動作確認")
+    print("TesseraFusion 動作確認")
     print("=" * 60)
     
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     
-    fusion = TesseractFusion().to(device)
+    fusion = TesseraFusion().to(device)
     print(fusion)
     
     # テスト入力
@@ -99,5 +99,5 @@ if __name__ == "__main__":
     print(f"比率: {ray_weight_norm/mamba_weight_norm:.4f} (期待値: ~0.1)")
     
     print("\n" + "=" * 60)
-    print("✅ TesseractFusion 準備完了")
+    print("✅ TesseraFusion 準備完了")
     print("=" * 60)
