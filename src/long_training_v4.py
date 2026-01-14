@@ -101,7 +101,7 @@ class Config:
     """設定"""
     
     # === 基本設定 ===
-    NUM_GAMES: int = 200000          # 総ゲーム数
+    NUM_GAMES: int = 1000000          # 総ゲーム数
     MAX_MOVES_PER_GAME: int = 200    # 1ゲームあたりの最大手数
     SEQ_LEN: int = 64                # シーケンス長
     
