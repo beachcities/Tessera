@@ -155,6 +155,47 @@ class TesseraModel(nn.Module):
         
         return policy,
     
+
+    def get_move_probabilities(
+        self,
+        move_sequence: torch.Tensor,
+        board: torch.Tensor,
+        legal_mask: Optional[torch.Tensor] = None,
+        temperature: float = 1.0
+    ) -> torch.Tensor:
+        """
+        対局時の推論用メソッド - Phase III 対応版
+        
+        Args:
+            move_sequence: [B, T] 手順のインデックス列
+            board: [B, 19, 19] 現在の盤面状態 (1=黒, -1=白, 0=空)
+            legal_mask: [B, 362] 合法手マスク (True=合法)
+            temperature: 温度パラメータ
+        
+        Returns:
+            probs: [B, 362] 各手の確率分布
+        """
+        self.eval()
+        with torch.no_grad():
+            policy, = self.forward(move_sequence, board, return_value=False)
+            
+            # 温度スケーリング
+            logits = policy / temperature
+            
+            # 362トークン（盤上361 + パス1）のみ使用
+            logits = logits[:, :362]
+            
+            # 合法手マスク適用
+            if legal_mask is not None:
+                logits = torch.where(
+                    legal_mask,
+                    logits,
+                    torch.full_like(logits, float('-inf'))
+                )
+            
+            probs = torch.softmax(logits, dim=-1)
+            return probs
+
     def load_phase2_weights(self, checkpoint_path: str) -> Dict[str, Any]:
         """
         Phase II のチェックポイントを読み込む

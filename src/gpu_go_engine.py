@@ -508,6 +508,36 @@ class GPUGoEngine:
         return "\n".join(lines)
 
 
+    def replay_history_to_boards(self, history: torch.Tensor) -> torch.Tensor:
+        """
+        1ゲームの履歴から各手番での盤面状態を再構成する
+        
+        Phase III 用: TesseraModel が各手番での盤面を必要とするため
+        
+        Args:
+            history: (seq_len,) - 手順のテンソル（単一ゲーム）
+        
+        Returns:
+            boards: (seq_len, 19, 19) - 各手番での盤面状態
+                    値: 0=空, 1=黒, -1=白
+        """
+        seq_len = history.size(0)
+        all_boards = torch.zeros(seq_len, BOARD_SIZE, BOARD_SIZE, 
+                                 dtype=torch.float32, device=self.device)
+        temp_engine = GPUGoEngine(batch_size=1, device=self.device)
+        
+        for t in range(seq_len):
+            black = temp_engine.boards[0, 0]
+            white = temp_engine.boards[0, 1]
+            all_boards[t] = black - white
+            move = history[t:t+1]
+            if move.item() != PASS_TOKEN and move.item() != PAD_TOKEN:
+                temp_engine.play_batch(move)
+        
+        del temp_engine
+        return all_boards
+
+
 # ============================================================
 # Test
 # ============================================================
@@ -595,4 +625,3 @@ if __name__ == "__main__":
     history = engine.get_current_sequence(max_len=10)
     print(f"First 10 moves: {history[0].tolist()}")
     
-    print("\n✅ GPUGoEngine test passed!")
