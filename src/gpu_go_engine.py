@@ -26,6 +26,7 @@ import torch
 import torch.nn.functional as F
 from typing import Optional, Tuple
 from dataclasses import dataclass
+from chain_utils import compute_chain_ids, remove_captured_stones
 
 
 # ============================================================
@@ -305,7 +306,7 @@ class GPUGoEngine:
                     self.boards[batch_idx[mask], color, rows[mask], cols[mask]] = 1.0
             
             # 捕獲処理
-            captured = self._capture_stones(rows, cols, is_board_move)
+            captured = self._capture_stones_v2(is_board_move)
             
             # コウ判定（簡易版：1子取りの場合のみ）
             self._update_ko(rows, cols, captured, is_board_move)
@@ -384,6 +385,33 @@ class GPUGoEngine:
         
         return captured
     
+
+    def _capture_stones_v2(self, is_board_move: torch.Tensor) -> torch.Tensor:
+        """
+        連の捕獲処理（Phase III バッチ一括版）
+        """
+        captured_total = torch.zeros(self.batch_size, dtype=torch.long, device=self.device)
+        
+        if not is_board_move.any():
+            return captured_total
+        
+        # 相手色を特定（turnは全バッチ共通と仮定）
+        opp_color = 1 - self.turn[0].long().item()
+        
+        # バッチ全体で一括処理
+        new_boards, captured_counts = remove_captured_stones(self.boards, opp_color)
+        
+        # 着手があったバッチのみ更新
+        self.boards = torch.where(
+            is_board_move.view(-1, 1, 1, 1).expand_as(self.boards),
+            new_boards,
+            self.boards
+        )
+        captured_total = torch.where(is_board_move, captured_counts, captured_total)
+        
+        return captured_total
+
+
     def _update_ko(self,
                    rows: torch.Tensor,
                    cols: torch.Tensor,
@@ -541,6 +569,36 @@ class GPUGoEngine:
 # ============================================================
 # Test
 # ============================================================
+
+
+    def replay_history_to_boards_fast(self, history: torch.Tensor) -> torch.Tensor:
+        """
+        高速版：履歴から盤面状態を再構成
+        """
+        seq_len = history.size(0)
+        device = self.device
+        
+        boards = torch.zeros(seq_len, BOARD_SIZE, BOARD_SIZE, 
+                            dtype=torch.float32, device=device)
+        
+        valid_mask = (history < PASS_TOKEN)
+        
+        if not valid_mask.any():
+            return boards
+        
+        cumulative = torch.zeros(BOARD_SIZE, BOARD_SIZE, dtype=torch.float32, device=device)
+        
+        for t in range(seq_len):
+            boards[t] = cumulative.clone()
+            
+            if valid_mask[t]:
+                move = history[t].item()
+                row, col = move // BOARD_SIZE, move % BOARD_SIZE
+                stone = 1.0 if t % 2 == 0 else -1.0
+                cumulative[row, col] = stone
+        
+        return boards
+
 
 if __name__ == "__main__":
     print("Testing GPUGoEngine...")

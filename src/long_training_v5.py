@@ -517,7 +517,7 @@ class ParallelTrainer:
         
         # Phase III: 盤面を再構成
         with torch.no_grad():
-            all_boards = self.engine.replay_history_to_boards(moves[:-1])
+            all_boards = self.engine.replay_history_to_boards_fast(moves[:-1])
             input_boards = all_boards.unsqueeze(0)  # (1, seq_len-1, 19, 19)
         
         # パディング
@@ -544,7 +544,12 @@ class ParallelTrainer:
         logits = logits.contiguous()
         target_seq = target_seq.contiguous()
         
-        loss = self.criterion(logits.reshape(-1, VOCAB_SIZE), target_seq.reshape(-1))
+        # Phase III: TesseraModel は最後の一手のみ予測
+        # target_seq は [1, seq_len] なので、最後の手だけを使用
+        target_last = target_seq[:, -1]  # shape: [1]
+        
+        # logits は [1, VOCAB_SIZE] なので reshape 不要
+        loss = self.criterion(logits, target_last)
         
         if torch.isnan(loss) or torch.isinf(loss):
             return 0.0
@@ -566,7 +571,6 @@ class ParallelTrainer:
         
         return loss_val
 
-    
     def run_elo_evaluation(self, model_name: str) -> Optional[Dict]:
         """
         ELO評価を実行（Clean Room Protocol）
