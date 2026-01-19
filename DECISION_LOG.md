@@ -287,3 +287,80 @@ current_board = current_board * perspective  # 追加
 - Phase III.2 完了条件のクリア
 
 **参加者:** 山田、Claude（四代目）、Gemini、Copilot
+
+### DEC-009: 主観的盤面と客観的手順の統合（Turn Embedding導入）（2026-01-20）
+
+**決定:** Mamba の Embedding 層に Turn Embedding を追加し、各着手が「自分の手か相手の手か」を識別可能にする。
+
+**背景:**
+
+Phase III.2 において Win Rate 0% / Policy Loss 5.91 停滞という事態に直面。
+DEC-008（視点正規化）を適用したにもかかわらず改善が見られず、原因調査を実施。
+
+**発見された「認知的不整合」:**
+
+| 入力 | 視点 | 状態 |
+|------|------|------|
+| 盤面（Board） | 主観的 | DEC-008 により「自分=+1, 相手=-1」に正規化済み |
+| 手順（Sequence） | 客観的 | 誰が打ったかの情報を含まない「絶対座標の ID 列」 |
+
+この不整合により、Mamba は「記憶（客観）」と「視覚（主観）」を統合できず、以下の状態に陥っていた：
+- 自分が誰として打てばよいか識別できない
+- 過去の手が自分と相手どちらの意志によるものか区別できない
+- Policy Head が学習不能 → Loss(P) 5.9 停滞
+- Win Rate 0% 継続
+
+**選択肢の比較検討:**
+
+| 評価軸 | Option A: ID空間分離 | Option B: Turn Embedding | Option C: 手順視点変換 |
+|--------|---------------------|--------------------------|----------------------|
+| 整合性 | 物理的に分離 | ベクトル空間で分離 | 論理的に完全 |
+| 実装コスト | 低 | 低（最小変更） | 高 |
+| DEC-002遵守 | × 破壊（vocab 2倍） | ○ 遵守（363維持） | ○ 遵守 |
+| Information Continuity | × 断絶（同一座標=別ID） | ○ 維持（同一座標=同一ID） | ○ 維持 |
+| 哲学への適合 | 低 | 高（最小変更・最大効果） | 高（理想だが過剰） |
+
+**決定理由（設計思想に基づく選定）:**
+
+1. **Information Continuity の保護:**
+   Tessera の哲学において、盤面上の座標（19×19）が持つ空間的意味は不変であるべき。Option A は「座標10の黒」と「座標10の白」を別の ID にしてしまい、Mamba の SSM State にとって不連続な跳躍を引き起こす。Option B は ID 空間を分断せず、Embedding 空間に「主観的な文脈（Hue）」を足し合わせることで、状態空間遷移において最も自然な解釈を可能にする。
+
+2. **DEC-002 / DEC-008 との調和:**
+   vocab_size=363 を維持しつつ、視点反転（DEC-008）を補完する。アーキテクチャへの侵襲が最小限でありながら、認知的なねじれを完全に解消できる。
+
+3. **「最小変更で最大効果」の原則:**
+   DEC-008 で確立された修正哲学に合致。既存の Mamba block を一切書き換えず、Embedding の加算のみで問題を解決する。
+
+**実装ガイドライン:**
+```python
+# MambaModel.__init__ 内
+self.turn_emb = nn.Embedding(2, config.D_MODEL)  # 0=Self, 1=Other
+
+# MambaModel.forward 内
+h = self.embedding(seq)           # [B, T, D] (空間情報)
+h = h + self.turn_emb(turn_seq)   # [B, T, D] (主観コンテキストの付与)
+h = self.mamba_layers(h)
+```
+
+**turn_seq の生成ルール:**
+- 現在の手番から見て、各 Token が「自分(0)か相手(1)か」を判定
+- 例: 黒番視点で [黒の手, 白の手, 黒の手] → turn_seq = [0, 1, 0]
+- 白番視点で [黒の手, 白の手, 黒の手] → turn_seq = [1, 0, 1]
+
+**期待される効果:**
+
+- 盤面（主観）と履歴（主観化）の整合性が確立
+- Mamba が「誰の手か」を識別可能に
+- Policy Head の学習が正常化
+- Loss(P) 5.9 停滞の突破
+- Win Rate > 0% の達成
+
+**議論の経緯:**
+
+1. Win Rate 0% の原因調査で「視点の不整合」を発見
+2. Claude が評価表を作成し、Tessera 思想との相性を分析
+3. Copilot が「Option D は診断、A/B/C は治療方針。治療方針は価値観と設計思想で決まる」と整理
+4. Gemini が「Information Continuity の勝利」として Option B を支持
+5. 三者（Claude, Copilot, Gemini）が Option B で完全一致
+
+**参加者:** 山田、Claude（五代目）、Gemini、Copilot

@@ -4,27 +4,34 @@ import torch
 from gpu_go_engine import GPUGoEngine, PASS_TOKEN, PAD_TOKEN
 from tessera_model import TesseraModel
 
-def quick_eval(num_games=64, checkpoint_path=None):
-    device = 'cuda'
-    if checkpoint_path is None:
-        checkpoint_path = '/app/checkpoints/tessera_phase3.2_fixed_final_loss5.91.pth'
+@torch.no_grad()
+def quick_eval(model, device='cuda', num_games=64, verbose=True):
+    """
+    モデルを直接受け取って評価する（学習ループ組み込み用）
     
-    model = TesseraModel().to(device)
-    model.load_state_dict(torch.load(checkpoint_path))
+    Args:
+        model: TesseraModel インスタンス（メモリ上）
+        device: 'cuda' or 'cpu'
+        num_games: 評価ゲーム数
+        verbose: 詳細出力するか
+    
+    Returns:
+        win_rate: 0.0 ~ 1.0
+    """
+    was_training = model.training
     model.eval()
     
-    engine = GPUGoEngine(batch_size=num_games, device=device)
-    history = [[] for _ in range(num_games)]
-    
-    print(f"Evaluating {num_games} games (Model=Black vs Random)...")
-    
-    with torch.no_grad():
+    try:
+        engine = GPUGoEngine(batch_size=num_games, device=device)
+        history = [[] for _ in range(num_games)]
+        
+        if verbose:
+            print(f"Evaluating {num_games} games (Model=Black vs Random)...")
+        
         for move_num in range(120):
             is_model_turn = (move_num % 2 == 0)
             
             if is_model_turn:
-                # 黒番固定：黒(0) - 白(1)
-                # Note: Model=黒固定のため視点変換不要（DEC-008参照）
                 boards = engine.boards[:, 0] - engine.boards[:, 1]
                 
                 seq_tensors = []
@@ -34,7 +41,7 @@ def quick_eval(num_games=64, checkpoint_path=None):
                     seq_tensors.append(torch.cat([pad, s]))
                 
                 logits, = model(torch.stack(seq_tensors), boards, return_value=False)
-                logits_legal = logits[:, :362]  # PASS(361)を含める
+                logits_legal = logits[:, :362]
                 
                 legal = engine.get_legal_mask()
                 logits_legal[~legal] = float('-inf')
@@ -49,18 +56,37 @@ def quick_eval(num_games=64, checkpoint_path=None):
             
             if engine.is_game_over().all():
                 break
+        
+        b_score, w_score, winners = engine.compute_score()
+        wins = (winners > 0).sum().item()
+        win_rate = wins / num_games
+        
+        if verbose:
+            print(f"\n{'='*50}")
+            print(f"Model(Black) Win Rate: {win_rate*100:.1f}% ({wins}/{num_games})")
+            print(f"Avg Score: B:{b_score.mean():.1f} W:{w_score.mean():.1f}")
+            print(f"{'='*50}\n")
+        
+        return win_rate
+    
+    finally:
+        if was_training:
+            model.train()
 
-    b_score, w_score, winners = engine.compute_score()
-    wins = (winners > 0).sum().item()
-    win_rate = wins / num_games * 100
+
+# 後方互換性のためのラッパー（スタンドアロン実行用）
+def quick_eval_from_checkpoint(num_games=64, checkpoint_path=None):
+    """チェックポイントからロードして評価（スタンドアロン用）"""
+    device = 'cuda'
+    if checkpoint_path is None:
+        checkpoint_path = '/app/checkpoints/tessera_phase3.2_fixed_final_loss5.91.pth'
     
-    print(f"\n{'='*50}")
-    print(f"Model(Black) Win Rate: {win_rate:.1f}% ({wins}/{num_games})")
-    print(f"Avg Score: B:{b_score.mean():.1f} W:{w_score.mean():.1f}")
-    print(f"{'='*50}\n")
+    model = TesseraModel().to(device)
+    model.load_state_dict(torch.load(checkpoint_path))
     
-    return wins / num_games
+    return quick_eval(model, device, num_games, verbose=True)
+
 
 if __name__ == "__main__":
     num_games = int(sys.argv[1]) if len(sys.argv) > 1 else 64
-    quick_eval(num_games=num_games)
+    quick_eval_from_checkpoint(num_games=num_games)

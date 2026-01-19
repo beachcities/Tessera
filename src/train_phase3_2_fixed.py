@@ -13,6 +13,7 @@ Version: 0.2.0
 """
 
 import sys
+from eval_quick import quick_eval
 sys.path.insert(0, '/app/src')
 
 import torch
@@ -70,7 +71,11 @@ class Phase3Trainer:
         B = self.config.BATCH_SIZE
         self.model.eval()
         with torch.no_grad():
-            boards = self.engine.boards[:, 0] - self.engine.boards[:, 1]
+            # 物理的な盤面（黒=1, 白=-1）
+            raw_boards = self.engine.boards[:, 0] - self.engine.boards[:, 1]
+            # 手番に応じた視点変換（自分=+1, 相手=-1）
+            turn_perspective = torch.where(self.engine.turn == 0, 1.0, -1.0).view(-1, 1, 1)
+            boards = raw_boards * turn_perspective
             seq_list = []
             for i in range(B):
                 if len(self.game_histories[i]) > 0:
@@ -198,7 +203,7 @@ def main():
     print("=" * 60)
     config = Config()
     config.NUM_GAMES = 10000
-    config.LOG_INTERVAL = 100
+    config.LOG_INTERVAL = 32
     config.SAVE_INTERVAL = 2000
     config.MIN_MOVES_BEFORE_PASS = 50
     config.PASS_PENALTY_WEIGHT = 0.1
@@ -231,6 +236,9 @@ def main():
             total_moves = trainer.stats['pass_count'] + trainer.stats['normal_count']
             pass_rate = trainer.stats['pass_count'] / max(1, total_moves) * 100
             print(f"Game {games:5d} | Loss: {avg_loss:.4f} (P:{avg_policy:.4f} V:{avg_value:.4f}) | Pass: {pass_rate:.1f}% | Speed: {gps:.1f} g/s")
+            # Win Rate 測定
+            win_rate = quick_eval(trainer.model, device="cuda", num_games=64, verbose=False)
+            print(f"         -> Win Rate: {win_rate*100:.1f}%")
             last_logged = games
         if games > 0 and games % config.SAVE_INTERVAL == 0:
             save_path = f'/app/checkpoints/tessera_phase3.2_fixed_game{games}.pth'

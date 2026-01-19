@@ -304,3 +304,89 @@ current_board = current_board * perspective
 ### 教訓
 
 > **「Reward だけでなく、全ての入力が視点と整合しているか確認せよ」**
+
+## TRAP-009: 盤面と履歴の視点不整合（Perspective Mismatch）
+
+**発見日:** 2026-01-20
+**深刻度:** 🔴 Critical
+**状態:** ✅ 解決（DEC-009）
+
+### 症状
+
+- DEC-008（視点正規化）を適用したにもかかわらず Win Rate 0% が継続
+- Loss(P) が 5.9 付近で停滞し、相転移が起きない
+- Pass は 0.2% と正常（パス連打ではない）
+- Value Loss もほぼ改善しない
+
+### 原因
+
+**「盤面は主観化したが、履歴は客観のまま」という認知的不整合**
+
+| 入力 | 視点 | 問題 |
+|------|------|------|
+| 盤面（Board） | 主観 | DEC-008 で「自分=+1, 相手=-1」に正規化済み ✅ |
+| 履歴（Sequence） | 客観 | 「誰が打ったか」の情報がない ❌ |
+
+Mamba の入力設計を確認したところ：
+```python
+# model.py - MambaModel.forward
+h = self.embedding(x)  # x は token ID（0〜362）のみ
+```
+
+seq には手番情報が一切含まれず、Mamba は「誰の手か」を識別できない状態だった。
+
+**Copilot の表現:**
+> 「視覚（boards）と記憶（seq）が別の世界線を見ている」
+
+**Gemini の表現:**
+> 「主語（誰が）も時制（いつ）も奪われた『単なる単語（座標）の羅列』を放り込んでいる」
+
+### なぜ危険か
+
+- TRAP-008（視点破綻）を修正しても、この問題が残っていると効果がない
+- 盤面だけ主観化しても、履歴が客観のままでは整合性が取れない
+- Policy Head が「誰の意志で打てばいいか」を判断できない
+- Loss(P) が一様分布（5.88）付近で停滞する
+
+### 対策
+
+**DEC-009: Turn Embedding の導入**
+```python
+# MambaModel.__init__ 内
+self.turn_emb = nn.Embedding(2, config.D_MODEL)  # 0=Self, 1=Other
+
+# MambaModel.forward 内
+h = self.embedding(seq)           # [B, T, D] (空間情報)
+h = h + self.turn_emb(turn_seq)   # [B, T, D] (主観コンテキストの付与)
+```
+
+これにより：
+- 各着手が「自分の手か相手の手か」を識別可能に
+- 盤面（主観）と履歴（主観化）の整合性が確立
+- vocab_size=363 を維持（DEC-002 との整合）
+- Information Continuity を維持（Tessera 哲学との整合）
+
+### TRAP-008 との関係
+
+| TRAP | 問題 | 影響範囲 | 解決 |
+|------|------|----------|------|
+| TRAP-008 | 盤面が黒視点固定 | Board 入力 | DEC-008 |
+| TRAP-009 | 履歴に手番情報なし | Sequence 入力 | DEC-009 |
+
+TRAP-008 と TRAP-009 は**両方とも解決しないと Win Rate は改善しない**。
+
+### 教訓
+
+> **「視点の整合性は、全ての入力経路で確保せよ」**
+
+盤面だけ、履歴だけ、ではなく、モデルに渡す**全ての入力**が同じ視点で整合している必要がある。
+
+### 発見の経緯
+
+1. DEC-008 適用後も Win Rate 0% → 「まだ何か漏れている」
+2. Copilot が step() の視点変換漏れを指摘 → 修正
+3. それでも Win Rate 0% → 「もっと深い問題がある」
+4. Gemini が「seq に手番情報がない」と指摘
+5. Copilot が「盤面は主観、履歴は客観」という構造的問題を言語化
+6. Claude が Tessera 思想との相性を評価表で整理
+7. 三者一致で Option B（Turn Embedding）を採用
