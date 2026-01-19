@@ -170,6 +170,11 @@ class Phase3Trainer:
                     current_board = all_boards[-1:]
                 else:
                     current_board = torch.zeros(1, BOARD_SIZE, BOARD_SIZE, device=self.device)
+            # DEC-008: 視点正規化（Perspective Normalization）
+            # 白番時は盤面を反転し、常に「自分=+1, 相手=-1」でモデルに渡す
+            perspective = 1.0 if idx % 2 == 0 else -1.0
+            current_board = current_board * perspective
+            
             policy_logits, value = self.model(input_seq, current_board, return_value=True)
             policy_loss = self.policy_criterion(policy_logits, target_move.unsqueeze(0))
             policy_loss = policy_loss * weight

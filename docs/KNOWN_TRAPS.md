@@ -270,3 +270,37 @@ Loss が改善しても、実際の性能（Win Rate）が伴わなければ意�
 
 ---
 
+
+## TRAP-008: 視点破綻（Perspective Collapse）
+
+**発見日:** 2026-01-19
+**深刻度:** 🔴 Critical
+**状態:** ✅ 解決（DEC-008）
+
+### 症状
+
+- Loss が 5.9 で停滞し、相転移が起きない
+- Win Rate が 0%（ランダムにすら勝てない）
+- しかしパス連打ではなく、石は正常に配置されている
+- 評価スクリプトは正常（Random vs Random で komi=0 なら約50%）
+
+### 原因
+
+学習時に盤面を常に「黒=+1, 白=-1」の絶対座標でモデルに渡していた。
+
+白番のとき：
+- Reward は winner * perspective で正しく変換されていた
+- しかし Board は黒視点固定
+- モデルは「自分の石が -1」という矛盾した状態で学習
+- 結果、何も学習できず Loss が一様分布（5.88）付近で停滞
+
+### 対策
+
+perspective = 1.0 if idx % 2 == 0 else -1.0
+current_board = current_board * perspective
+
+これにより Board / Seq / Reward が整合する。
+
+### 教訓
+
+> **「Reward だけでなく、全ての入力が視点と整合しているか確認せよ」**

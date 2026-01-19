@@ -24,6 +24,7 @@ def quick_eval(num_games=64, checkpoint_path=None):
             
             if is_model_turn:
                 # 黒番固定：黒(0) - 白(1)
+                # Note: Model=黒固定のため視点変換不要（DEC-008参照）
                 boards = engine.boards[:, 0] - engine.boards[:, 1]
                 
                 seq_tensors = []

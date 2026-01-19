@@ -223,3 +223,67 @@ Batched: 複数ゲームを一括でGPUに投入し同時処理
 **結果:** gpu_go_engine.py から VOCAB_SIZE = 364 を削除。経緯をコメントで記録。
 
 **参加者:** 山田、Claude、Gemini、Copilot
+
+### DEC-008: 視点正規化（Perspective Normalization）（2026-01-19）
+
+**決定:** 学習時に盤面を手番に応じて反転し、常に「自分=+1, 相手=-1」でモデルに渡す。
+
+**背景:**
+- Phase III.2 Fixed版で Win Rate 0%（64戦全敗）
+- Random vs Random では komi=0 で約50%、評価ロジックは正常
+- 調査の結果、学習コードの視点破綻を発見
+
+**問題の構造:**
+- `replay_history_to_boards_fast` は常に黒=+1, 白=-1 を返す
+- Value Head の Reward は `winner * perspective` で正しく変換されていた
+- しかし Board は黒視点固定のままモデルに渡されていた
+- 白番時、モデルは「自分の石が -1」という矛盾した状態で学習
+
+**修正:**
+```python
+perspective = 1.0 if idx % 2 == 0 else -1.0
+current_board = current_board * perspective  # 追加
+```
+
+**決定理由:**
+- Board / Seq / Reward の三位一体を整合させる
+- 最小変更で最大効果
+- Claude、Gemini、Copilot の三者合意
+
+**期待される効果:**
+- Loss 5.91 の停滞を突破
+- Win Rate > 0% の達成
+- Phase III.2 完了条件のクリア
+
+**参加者:** 山田、Claude（四代目）、Gemini、Copilot
+
+### DEC-008: 視点正規化（Perspective Normalization）（2026-01-19）
+
+**決定:** 学習時に盤面を手番に応じて反転し、常に「自分=+1, 相手=-1」でモデルに渡す。
+
+**背景:**
+- Phase III.2 Fixed版で Win Rate 0%（64戦全敗）
+- Random vs Random では komi=0 で約50%、評価ロジックは正常
+- 調査の結果、学習コードの視点破綻を発見
+
+**問題の構造:**
+- replay_history_to_boards_fast は常に黒=+1, 白=-1 を返す
+- Value Head の Reward は winner * perspective で正しく変換されていた
+- しかし Board は黒視点固定のままモデルに渡されていた
+- 白番時、モデルは「自分の石が -1」という矛盾した状態で学習
+
+**修正:**
+perspective = 1.0 if idx % 2 == 0 else -1.0
+current_board = current_board * perspective  # 追加
+
+**決定理由:**
+- Board / Seq / Reward の三位一体を整合させる
+- 最小変更で最大効果
+- Claude、Gemini、Copilot の三者合意
+
+**期待される効果:**
+- Loss 5.91 の停滞を突破
+- Win Rate > 0% の達成
+- Phase III.2 完了条件のクリア
+
+**参加者:** 山田、Claude（四代目）、Gemini、Copilot
