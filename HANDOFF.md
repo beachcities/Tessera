@@ -1,7 +1,7 @@
 # Tessera (MambaGo) 引き継ぎドキュメント
 
-**Date:** 2026-01-14
-**Status:** Phase II-c 完了、Phase III 準備中
+**Date:** 2026-01-19
+**Status:** Phase III.2 進行中（ロールバック）
 
 ---
 
@@ -12,61 +12,113 @@
 | Phase | 内容 | 状態 | 成果 |
 |-------|------|------|------|
 | I | 環境構築（Docker + CUDA 12.6 + Mamba SSM） | ✅ | 動作確認済み |
-| II-a | GPU-Native Go Engine + MambaModel統合 | ✅ | 自己対局成功 |
-| II-b | 100,000 ゲーム学習 | ✅ | ELO 1512 |
-| II-c | 200,000 ゲーム学習 | ✅ | ELO 1496、最高 1517 |
+| II | GPU-Native Go Engine + MambaModel統合、自己対局学習 | ✅ | ELO 1517達成 |
+| III.1 | TesseraModel統合、方針検討 | ✅ | Tromp-Taylorへ方針転換 |
 
-### 最新チェックポイント
+### 進行中
 
-```
-checkpoints/tessera_v4_final_game200096_elo1496.pth
-```
+| Phase | 内容 | 状態 | 備考 |
+|-------|------|------|------|
+| III.2 | Tromp-Taylor + Value Head | 🔄 | ロールバック、詳細は下記 |
+
+---
+
+## Phase III.2 の状況
+
+### 背景
+
+Phase III.2 では Tromp-Taylor ルールと Value Head を導入し、Loss 3.58 を達成した（成功版）。
+しかし、Win Rate が 0% のままであり、「パス連打による偽成功」の疑いが発覚。
+
+### 経緯
+
+1. **成功版 (Loss 3.58)**: 相転移が発生したように見えたが、Win Rate 0%
+2. **調査**: パス連打でゲームが即終了し、盤面を学習していない疑い
+3. **Fixed版 (Loss 5.91)**: パス制限（50手まで禁止）、8点サンプリングを導入
+4. **現状**: Fixed版の方向性は正しいが、相転移に至っていない
+5. **判断**: Phase III.2 を「完了」から「進行中」にロールバック
+
+### チェックポイント
+
+| ファイル | Loss | 状態 |
+|----------|------|------|
+| `tessera_phase3.2_final_loss3.58.pth` | 3.58 | ⚠️ 偽成功の疑い |
+| `tessera_phase3.2_fixed_final_loss5.91.pth` | 5.91 | 🔄 正しい方向、相転移前 |
+
+### Phase III.2 完了条件（再定義）
+
+| # | 条件 | 現状 |
+|---|------|------|
+| 1 | Fixed版で相転移（Loss急降下） | ❌ 未達 |
+| 2 | Win Rate vs Random > 0% | ❌ 未達 |
+| 3 | パス連打でない正常な対局 | 🔄 確認中 |
 
 ---
 
 ## 重要な技術的発見
 
-### MambaStateCapture の削除
+### MambaStateCapture の削除（Phase II）
 
 **問題:** ELO 評価時に OOM が頻発
 **原因:** forward hook が hidden state を保持し続けメモリリーク
 **解決:** MambaStateCapture クラスを完全削除
 **効果:** 790 回の ELO 評価で OOM ゼロ
 
-### Loss の相転移現象
+### Loss の相転移現象（Phase II）
 
 175k ゲーム付近で Loss が 5.4 → 2.3 へ急降下。
 これは学習が「臨界点」を超えた証拠であり、正常な挙動。
+
+### パス連打による偽成功（Phase III.2）
+
+**問題:** Loss 3.58 達成も Win Rate 0%
+**原因:** パス連打でゲーム即終了、盤面学習なし
+**教訓:** **Loss の低下を無批判に喜ばない。Win Rate で検証必須。**
+
+---
+
+## トークン設計
+
+| ID | 意味 | 備考 |
+|----|------|------|
+| 0-360 | 盤上座標 (19×19) | |
+| 361 | PASS | |
+| 362 | PAD | 着手不可、学習時のみ使用 |
+| 363 | EOS | 予約済み、**未使用** |
+
+**vocab_size = 363**（学習時のEmbedding/Output次元）
+**PolicyHead出力 = 362**（推論時、PADを除外した着手可能空間）
 
 ---
 
 ## 動作確認済みコンポーネント
 
-| ファイル | 役割 | テスト |
-|----------|------|--------|
-| `src/monitor.py` | TesseraMonitor（VRAM, SSM State監視） | ✅ |
-| `src/gpu_go_engine.py` | GPUGoEngine（バッチ着手、単石捕獲） | ✅ |
-| `src/model.py` | MambaModel（4層、1.9Mパラメータ） | ✅ |
-| `src/long_training_v4.py` | 長期学習（ELO評価、Tile保存） | ✅ |
-| `streamlit_dashboard.py` | リアルタイム可視化 | ✅ |
+| ファイル | 役割 | Phase | テスト |
+|----------|------|-------|--------|
+| `src/monitor.py` | TesseraMonitor（VRAM, SSM State監視） | II | ✅ |
+| `src/gpu_go_engine.py` | GPUGoEngine（Tromp-Taylor版） | III | ✅ |
+| `src/model.py` | MambaModel（4層、1.9Mパラメータ） | II | ✅ |
+| `src/tessera_model.py` | TesseraModel（Mamba + Value Head） | III | 🔄 |
+| `src/train_phase3_2_fixed.py` | Fixed版学習スクリプト | III | 🔄 |
+| `src/chain_utils.py` | GPU地計算（flood-fill） | III | ✅ |
 
 ---
 
 ## 環境起動手順
-
 ```bash
 cd ~/GoMamba_Local
 docker compose up -d
 docker compose exec tessera bash
 
-# コンテナ内で学習再開
-python3.10 src/long_training_v4.py --resume checkpoints/tessera_v4_final_game200096_elo1496.pth
+# Phase III.2 Fixed版の学習
+python3.10 src/train_phase3_2_fixed.py
 ```
 
 ---
 
 ## アーキテクチャ概要
 
+### Phase II
 ```
 ┌─────────────────────────────────────────┐
 │         GPU 内完結アーキテクチャ          │
@@ -81,26 +133,15 @@ python3.10 src/long_training_v4.py --resume checkpoints/tessera_v4_final_game200
 └─────────────────────────────────────────┘
 ```
 
----
-
-## トークン設計
-
-| ID | 意味 |
-|----|------|
-| 0-360 | 盤上座標 (19×19) |
-| 361 | PASS |
-| 362 | PAD |
-| 363 | EOS |
-| **364** | VOCAB_SIZE |
-
----
-
-## Phase II 制限事項（Phase III で対応予定）
-
-1. **単石捕獲のみ** - 連の実装なし
-2. **単純コウのみ** - スーパーコウなし
-3. **自殺手判定が不完全** - 単石のみ
-4. **終局判定が単純** - 二連続パスのみ、地の計算なし
+### Phase III（TesseraModel）
+```
+TesseraModel
+├── MoveEncoder (Embedding + Mamba)
+├── TesseractField (Conv2d)
+├── Fusion (Linear)
+├── PolicyHead (Linear) → 362次元
+└── ValueHead (MLP) → 勝敗予測 [-1, +1]
+```
 
 ---
 
@@ -109,61 +150,26 @@ python3.10 src/long_training_v4.py --resume checkpoints/tessera_v4_final_game200
 | ドキュメント | 内容 |
 |-------------|------|
 | `docs/DESIGN_SPEC_PHASE_II.md` | Phase II 設計仕様 |
-| `docs/DESIGN_SPEC_PHASE_III.md` | Phase III 設計（新規） |
-| `EXPERIMENT_LOG.md` | 実験結果の記録 |
+| `docs/DESIGN_SPEC_PHASE_III.md` | Phase III 設計仕様 |
+| `docs/PHASE_III_2_RESULTS.md` | Phase III.2 実験結果 |
+| `DECISION_LOG.md` | 決定記録（新規予定） |
 | `CHANGELOG.md` | 変更履歴 |
 
 ---
 
-## 次のステップ（Phase III 候補）
+## 次のステップ
 
-### 優先度 高
-1. **連の GPU 実装** - Connected Components
-2. **終局判定の改善** - 地の計算
+### Phase III.2 完了に向けて
 
-### 優先度 中
-3. **best_loss の修正** - 移動平均に変更
-4. **外部評価** - GnuGo/KataGo との対戦（評価専用）
+1. **Fixed版の学習継続** - 相転移を観察
+2. **Win Rate確認** - vs Random で > 0% を達成
+3. **対局内容の定性的確認** - パス連打でないこと
 
-### 将来検討（未検証）
-5. **19^4 テンソル設計** - 理論的検証が必要
-6. **Incremental Inference** - 1手ずつ状態更新
-7. **確定領域マスク** - 終盤の計算効率化
+### Phase III.3（Phase III.2 完了後）
 
----
-
-## Streamlit ダッシュボード起動
-
-```bash
-cd ~/GoMamba_Local
-source venv/bin/activate
-streamlit run streamlit_dashboard.py
-# ブラウザで http://localhost:8501
-```
-
----
-
-## コマンドチートシート
-
-```bash
-# 環境起動
-docker compose up -d
-docker compose exec tessera bash
-
-# 学習実行
-python3.10 src/long_training_v4.py
-
-# 学習再開
-python3.10 src/long_training_v4.py --resume checkpoints/tessera_v4_final_game200096_elo1496.pth
-
-# ログ確認
-tail -f logs/training_v4_*.log
-
-# Git操作
-git add -A
-git commit -m "message"
-git push origin main
-```
+1. vs Random (100戦) - 基礎性能確認
+2. vs Phase II - 世代間比較
+3. SGF Exporter - 棋譜可視化
 
 ---
 
@@ -173,9 +179,14 @@ git push origin main
 > 最後の一手は常にユーザーが選ぶ（Agency）。
 
 **設計原則:**
-- GPU Complete: 全操作が GPU 内で完結
-- Batch First: 全操作がバッチ化
-- Clean Room: 外部棋譜を使用しない、自己対戦のみ
+
+| Principle | Description |
+|-----------|-------------|
+| **GPU Complete** | 全操作がGPU内で完結、CPU転送ゼロ |
+| **Vectorized** | Pythonループを排除し、全操作をテンソル演算に置き換え |
+| **Batched** | 複数ゲームを一括でGPUに投入し同時処理 |
+| **Clean Room** | 外部棋譜を使用しない、自己対戦のみ |
+| **Observable** | 全ての挙動がモニター可能 |
 
 ---
 
