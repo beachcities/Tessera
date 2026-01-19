@@ -33,7 +33,7 @@ class TesseraModel(nn.Module):
     def __init__(
         self,
         # Mamba 設定（Phase II 互換）
-        vocab_size: int = 364,
+        vocab_size: int = 363,
         d_model: int = 256,
         n_layers: int = 4,
         # Diffusion 設定
