@@ -25,7 +25,9 @@ BOARD_SIZE = 19
 PASS_TOKEN = 361
 PAD_TOKEN = 362
 EOS_TOKEN = 363
-VOCAB_SIZE = 364
+# VOCAB_SIZE は削除: Phase II (364) と Phase III (363) で異なるため、
+# エンジン層は物理定数のみを扱い、vocab_size は各モデルで管理する。
+# 経緯: DEC-007 参照
 
 # 隣接カーネル（上下左右）
 NEIGHBOR_KERNEL = torch.tensor([

@@ -179,3 +179,47 @@ Batched: 複数ゲームを一括でGPUに投入し同時処理
 ---
 
 *"Le symbole donne à penser."* — Paul Ricœur
+
+---
+
+### DEC-007: gpu_go_engine.py から VOCAB_SIZE 定数を削除（2026-01-19）
+
+**決定:** `gpu_go_engine.py` から `VOCAB_SIZE = 364` を削除する。
+
+**背景:**
+- DEC-002 で vocab_size = 363 が確定済み
+- TRAP-002（vocab_size の次元混乱）は解決済みとして KNOWN_TRAPS.md に記録済み
+- `gpu_go_engine.py` の `VOCAB_SIZE = 364` は grep で確認したところ参照箇所なし
+- train_phase3_2_fixed.py は VOCAB_SIZE をインポートせず、TesseraModel のデフォルト値（363）を使用
+- Phase II チェックポイントとの互換性は model.py（364）と load_phase2_weights メソッドで担保済み
+
+**選択肢:**
+- A: 削除する
+- B: コメントで経緯を明記して維持
+- C: そのまま維持
+
+**議論の経緯:**
+1. Claude が選択肢を提示し、Gemini と Copilot に確認
+2. 両者から回答を受領後、Design Document との整合性を確認
+3. DESIGN_SPEC_PHASE_II.md（364）と DESIGN_SPEC_PHASE_III.md（363）が各ソースコードと整合していることを確認
+4. Phase II 互換性の必要性を検証 → train_phase3_2_fixed.py は Phase II 重みをロードしていない
+
+**Gemini の見解:**
+- 「エンジンは物理定数、モデルは設計定数」という責務分離を推奨
+- VOCAB_SIZE は「モデルの都合」であり、エンジンが持つべきではない
+- 削除を推奨
+
+**Copilot の見解:**
+- 責務分離の観点に同意
+- 参照されていない定数は「文化的負債」
+- TRAP-002 再発防止のため削除を推奨
+
+**決定理由:**
+- 参照箇所がなく、Phase III では使用されていない
+- エンジン層は物理定数（PASS_TOKEN, PAD_TOKEN）のみを扱うべき
+- 将来の保守者（人間・AI）の混乱を防ぐ
+- Gemini、Copilot ともに削除に賛同
+
+**結果:** gpu_go_engine.py から VOCAB_SIZE = 364 を削除。経緯をコメントで記録。
+
+**参加者:** 山田、Claude、Gemini、Copilot
