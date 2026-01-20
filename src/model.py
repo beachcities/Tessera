@@ -51,6 +51,7 @@ class MambaModel(nn.Module):
         
         # Embedding
         self.embedding = nn.Embedding(vocab_size, d_model, padding_idx=PAD_TOKEN)
+        self.turn_emb = nn.Embedding(2, d_model)  # DEC-009: 0=Self, 1=Other
         
         # Mamba layers
         try:
@@ -92,8 +93,10 @@ class MambaModel(nn.Module):
         nn.init.zeros_(self.head.bias)
         nn.init.normal_(self.head.weight, mean=0.0, std=0.02)
     
-    def forward(self, x: torch.Tensor, return_hidden: bool = False) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, turn_seq: torch.Tensor = None, return_hidden: bool = False) -> torch.Tensor:
         h = self.embedding(x)
+        if turn_seq is not None:
+            h = h + self.turn_emb(turn_seq)  # DEC-009: 主観コンテキスト付与
         h = self.dropout(h)
         
         hidden_states = []

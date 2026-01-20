@@ -40,7 +40,20 @@ def quick_eval(model, device='cuda', num_games=64, verbose=True):
                     pad = torch.full((256 - len(s),), PAD_TOKEN, device=device, dtype=torch.long)
                     seq_tensors.append(torch.cat([pad, s]))
                 
-                logits, = model(torch.stack(seq_tensors), boards, return_value=False)
+                # DEC-009: turn_seq 生成（Model=黒番固定、偶数手=自分(0)、奇数手=相手(1)）
+                turn_seq_list = []
+                for h in history:
+                    history_len = len(h)
+                    if history_len > 0:
+                        ts = torch.tensor([j % 2 for j in range(history_len)], device=device, dtype=torch.long)
+                        ts = ts[-256:]
+                        ts_pad = torch.zeros(256 - len(ts), device=device, dtype=torch.long)
+                        turn_seq_list.append(torch.cat([ts_pad, ts]))
+                    else:
+                        turn_seq_list.append(torch.zeros(256, device=device, dtype=torch.long))
+                turn_seq = torch.stack(turn_seq_list)
+                
+                logits, = model(torch.stack(seq_tensors), boards, turn_seq=turn_seq, return_value=False)
                 logits_legal = logits[:, :362]
                 
                 legal = engine.get_legal_mask()
@@ -82,7 +95,7 @@ def quick_eval_from_checkpoint(num_games=64, checkpoint_path=None):
         checkpoint_path = '/app/checkpoints/tessera_phase3.2_fixed_final_loss5.91.pth'
     
     model = TesseraModel().to(device)
-    model.load_state_dict(torch.load(checkpoint_path))
+    model.load_state_dict(torch.load(checkpoint_path), strict=False)
     
     return quick_eval(model, device, num_games, verbose=True)
 

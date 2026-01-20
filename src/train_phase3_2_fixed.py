@@ -87,7 +87,18 @@ class Phase3Trainer:
             padded_seqs = torch.full((B, max_len), PAD_TOKEN, dtype=torch.long, device=self.device)
             for i, seq in enumerate(seq_list):
                 padded_seqs[i, -seq.size(0):] = seq
-            logits, = self.model(padded_seqs, boards, return_value=False)
+            
+            # DEC-009: turn_seq 生成（自分=0, 相手=1）
+            turn_seq = torch.zeros_like(padded_seqs)
+            for i in range(B):
+                history_len = len(self.game_histories[i])
+                if history_len > 0:
+                    current_turn = self.engine.turn[i].item()  # 0=黒, 1=白
+                    for j in range(history_len):
+                        move_turn = j % 2  # この手を打った人（0=黒, 1=白）
+                        is_other = 1 if move_turn != current_turn else 0
+                        turn_seq[i, -(history_len - j)] = is_other
+            logits, = self.model(padded_seqs, boards, turn_seq=turn_seq, return_value=False)
             legal_mask = self.engine.get_legal_mask()
             logits_362 = logits[:, :362]
             pass_idx = 361
@@ -179,14 +190,23 @@ class Phase3Trainer:
             # 白番時は盤面を反転し、常に「自分=+1, 相手=-1」でモデルに渡す
             perspective = 1.0 if idx % 2 == 0 else -1.0
             current_board = current_board * perspective
+            # DEC-009: turn_seq 生成（自分=0, 相手=1）
+            current_player = idx % 2  # 0=黒番, 1=白番
+            turn_seq = torch.zeros_like(input_seq)
+            actual_moves_len = len(input_moves)
+            for j in range(actual_moves_len):
+                move_turn = j % 2  # この手を打った人（0=黒, 1=白）
+                is_other = 1 if move_turn != current_player else 0
+                turn_seq[0, -(actual_moves_len - j)] = is_other
             
-            policy_logits, value = self.model(input_seq, current_board, return_value=True)
-            policy_loss = self.policy_criterion(policy_logits, target_move.unsqueeze(0))
-            policy_loss = policy_loss * weight
+            
+            policy_logits, value = self.model(input_seq, current_board, turn_seq=turn_seq, return_value=True)
+            raw_policy_loss = self.policy_criterion(policy_logits, target_move.unsqueeze(0))
+            policy_loss = raw_policy_loss * weight
             perspective = 1.0 if idx % 2 == 0 else -1.0
             target_value = torch.tensor([[winner * perspective]], dtype=torch.float32, device=self.device)
             value_loss = self.value_criterion(value, target_value)
-            total_policy_loss += policy_loss.item() * weight
+            total_policy_loss += raw_policy_loss.item() * weight
             total_value_loss += value_loss.item()
             total_weight += weight
             loss = policy_loss + self.config.VALUE_LOSS_WEIGHT * value_loss
@@ -209,9 +229,10 @@ def main():
     config.PASS_PENALTY_WEIGHT = 0.1
     config.LEARN_SAMPLES_PER_GAME = 8
     trainer = Phase3Trainer(config, device='cuda')
-    checkpoint_path = '/app/checkpoints/tessera_phase3.2_final_loss3.58.pth'
+    checkpoint_path = '/app/checkpoints/tessera_phase3.2_fixed_final_loss5.91.pth'
     try:
-        trainer.model.load_state_dict(torch.load(checkpoint_path))
+        state_dict = torch.load(checkpoint_path)
+        trainer.model.load_state_dict(state_dict, strict=False)
         print(f"Loaded: {checkpoint_path}")
     except Exception as e:
         print(f"Starting fresh: {e}")

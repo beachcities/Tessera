@@ -94,6 +94,7 @@ class TesseraModel(nn.Module):
         self,
         move_sequence: torch.Tensor,
         board: Optional[torch.Tensor] = None,
+        turn_seq: Optional[torch.Tensor] = None,  # DEC-009
         return_value: bool = False,
     ) -> Tuple[torch.Tensor, ...]:
         """
@@ -113,7 +114,7 @@ class TesseraModel(nn.Module):
         
         # === Mamba: 時系列処理 ===
         # MambaModel の内部で embedding + Mamba layers
-        mamba_logits = self.mamba(move_sequence)  # [B, T, vocab_size]
+        mamba_logits = self.mamba(move_sequence, turn_seq=turn_seq)  # DEC-009  # [B, T, vocab_size]
         
         # 最後の位置の特徴量を取得
         # MambaModel の内部構造にアクセスする必要があるため、
