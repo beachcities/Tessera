@@ -235,6 +235,7 @@ def main():
     print("Starting...\n")
     start = time.time()
     last_logged = 0
+    last_saved = 0
     while trainer.stats['total_games'] < config.NUM_GAMES:
         finished, loss = trainer.step()
         games = trainer.stats['total_games']
@@ -251,10 +252,11 @@ def main():
             win_rate = quick_eval(trainer.model, device="cuda", num_games=64, verbose=False)
             print(f"         -> Win Rate: {win_rate*100:.1f}%")
             last_logged = games
-        if games > 0 and games % config.SAVE_INTERVAL == 0:
+        if games > 0 and games % config.SAVE_INTERVAL == 0 and games > last_saved:
             save_path = f'/app/checkpoints/tessera_phase3.2_fixed_game{games}.pth'
             torch.save(trainer.model.state_dict(), save_path)
             print(f"Checkpoint saved: {save_path}")
+            last_saved = games
     elapsed = time.time() - start
     avg_loss = trainer.stats['total_loss'] / max(1, trainer.stats['loss_count'])
     save_path = f'/app/checkpoints/tessera_phase3.2_fixed_final_loss{avg_loss:.2f}.pth'
