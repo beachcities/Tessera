@@ -213,7 +213,7 @@ def main():
     print("=" * 60)
     config = Config()
     config.NUM_GAMES = 10000
-    config.LOG_INTERVAL = 32
+    config.LOG_INTERVAL = 256
     config.SAVE_INTERVAL = 2000
     config.MIN_MOVES_BEFORE_PASS = 50
     config.PASS_PENALTY_WEIGHT = 0.1
