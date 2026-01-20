@@ -3,6 +3,7 @@ sys.path.insert(0, '/app/src')
 import torch
 from gpu_go_engine import GPUGoEngine, PASS_TOKEN, PAD_TOKEN
 from tessera_model import TesseraModel
+from utils import get_turn_sequence
 
 @torch.no_grad()
 def quick_eval(model, device='cuda', num_games=64, verbose=True):
@@ -40,18 +41,10 @@ def quick_eval(model, device='cuda', num_games=64, verbose=True):
                     pad = torch.full((256 - len(s),), PAD_TOKEN, device=device, dtype=torch.long)
                     seq_tensors.append(torch.cat([pad, s]))
                 
-                # DEC-009: turn_seq 生成（Model=黒番固定、偶数手=自分(0)、奇数手=相手(1)）
-                turn_seq_list = []
-                for h in history:
-                    history_len = len(h)
-                    if history_len > 0:
-                        ts = torch.tensor([j % 2 for j in range(history_len)], device=device, dtype=torch.long)
-                        ts = ts[-256:]
-                        ts_pad = torch.zeros(256 - len(ts), device=device, dtype=torch.long)
-                        turn_seq_list.append(torch.cat([ts_pad, ts]))
-                    else:
-                        turn_seq_list.append(torch.zeros(256, device=device, dtype=torch.long))
-                turn_seq = torch.stack(turn_seq_list)
+                # DEC-009: turn_seq 生成（ベクトル化版、Model=黒番固定）
+                history_lengths = torch.tensor([len(h) for h in history], device=device)
+                current_turns = torch.zeros(num_games, device=device, dtype=torch.long)  # Model=黒番固定
+                turn_seq = get_turn_sequence(history_lengths, current_turns, 256, device)
                 
                 logits, = model(torch.stack(seq_tensors), boards, turn_seq=turn_seq, return_value=False)
                 logits_legal = logits[:, :362]

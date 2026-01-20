@@ -15,6 +15,7 @@ Version: 0.2.0
 import sys
 from eval_quick import quick_eval
 sys.path.insert(0, '/app/src')
+from utils import get_turn_sequence
 
 import torch
 import torch.nn as nn
@@ -88,16 +89,9 @@ class Phase3Trainer:
             for i, seq in enumerate(seq_list):
                 padded_seqs[i, -seq.size(0):] = seq
             
-            # DEC-009: turn_seq 生成（自分=0, 相手=1）
-            turn_seq = torch.zeros_like(padded_seqs)
-            for i in range(B):
-                history_len = len(self.game_histories[i])
-                if history_len > 0:
-                    current_turn = self.engine.turn[i].item()  # 0=黒, 1=白
-                    for j in range(history_len):
-                        move_turn = j % 2  # この手を打った人（0=黒, 1=白）
-                        is_other = 1 if move_turn != current_turn else 0
-                        turn_seq[i, -(history_len - j)] = is_other
+            # DEC-009: turn_seq 生成（ベクトル化版）
+            history_lengths = torch.tensor([len(h) for h in self.game_histories], device=self.device)
+            turn_seq = get_turn_sequence(history_lengths, self.engine.turn, padded_seqs.shape[1], self.device)
             logits, = self.model(padded_seqs, boards, turn_seq=turn_seq, return_value=False)
             legal_mask = self.engine.get_legal_mask()
             logits_362 = logits[:, :362]
@@ -190,15 +184,11 @@ class Phase3Trainer:
             # 白番時は盤面を反転し、常に「自分=+1, 相手=-1」でモデルに渡す
             perspective = 1.0 if idx % 2 == 0 else -1.0
             current_board = current_board * perspective
-            # DEC-009: turn_seq 生成（自分=0, 相手=1）
+            # DEC-009: turn_seq 生成（ベクトル化版）
             current_player = idx % 2  # 0=黒番, 1=白番
-            turn_seq = torch.zeros_like(input_seq)
-            actual_moves_len = len(input_moves)
-            for j in range(actual_moves_len):
-                move_turn = j % 2  # この手を打った人（0=黒, 1=白）
-                is_other = 1 if move_turn != current_player else 0
-                turn_seq[0, -(actual_moves_len - j)] = is_other
-            
+            history_lengths = torch.tensor([len(input_moves)], device=self.device)
+            current_turns = torch.tensor([current_player], device=self.device)
+            turn_seq = get_turn_sequence(history_lengths, current_turns, input_seq.shape[1], self.device)
             
             policy_logits, value = self.model(input_seq, current_board, turn_seq=turn_seq, return_value=True)
             raw_policy_loss = self.policy_criterion(policy_logits, target_move.unsqueeze(0))
