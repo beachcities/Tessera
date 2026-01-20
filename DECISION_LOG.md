@@ -331,3 +331,44 @@ h = self.mamba_layers(h)
 5. 三者（Claude, Copilot, Gemini）が Option B で完全一致
 
 **参加者:** 山田、Claude（五代目）、Gemini、Copilot
+
+### DEC-010: Phase III.3 設計方針 - Value-Guided Policy Improvement（2026-01-20）
+
+**決定:** Phase III.2 完了後、Policy 学習を「Behavioral Cloning」から「Value-Guided Policy Improvement」へ転換する。
+
+**背景:**
+
+Phase III.2 の 10,000 ゲーム学習で以下が判明：
+- Value Loss: 0.45 → 0.04（91%改善、形勢判断は完璧）
+- Policy Loss: 5.90 → 5.89（ほぼ停滞、ln(362) ≈ 5.89 = 一様分布）
+- Win Rate: 最大 12.5% に到達後、0% に戻る
+
+**問題の構造:**
+
+現在の Policy 学習は「打った手をそのまま正解として学習」している（Behavioral Cloning）。
+- 勝った時の手も、負けた時の手も、同じ重みで学習
+- 勾配が相殺し、Loss が一様分布付近で停滞
+- 「勝利への因果」が切断されている
+
+Gemini の表現：「世界はよく見えているが、自分の手を信じていない」
+
+**Phase III.3 での解決策:**
+
+1. **Advantage 導入**: Policy Loss に勝敗による重み付けを追加
+```python
+advantage = (winner * perspective) - value.detach()
+policy_loss = cross_entropy(...) * advantage
+```
+
+2. **温度調整**: 1.5 → 2.5 に引き上げ、探索の多様性を増加
+
+3. **サンプル数増加**: LEARN_SAMPLES_PER_GAME を 8 → 16 に
+
+**Phase III.2 と III.3 の役割分担:**
+
+| Phase | 目的 |
+|-------|------|
+| III.2 | 器を整える（高速化 + 安定な自己対局ループ） |
+| III.3 | 行動に意味を与える（RL的拡張） |
+
+**参加者:** 山田、Claude（八代目）、Gemini、Copilot
