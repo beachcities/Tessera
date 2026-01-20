@@ -254,6 +254,49 @@ def compute_territory(boards, komi=6.5):
 - しかし、これは「パス連打を学習した」偽の相転移だった可能性
 - Fixed版で真の相転移を目指す
 
+### 4.4 視点の整合性（DEC-008/009）
+
+Phase III.2 で Win Rate 0% が継続した原因として、視点の不整合が発見された。
+
+#### DEC-008: 視点正規化（Perspective Normalization）
+
+**問題:** 盤面を常に「黒=+1, 白=-1」の絶対座標でモデルに渡していた。
+白番時、モデルは「自分の石が -1」という矛盾した状態で学習。
+
+**解決:**
+```python
+perspective = 1.0 if idx % 2 == 0 else -1.0
+current_board = current_board * perspective
+```
+
+これにより常に「自分=+1, 相手=-1」でモデルに渡される。
+
+#### DEC-009: Turn Embedding
+
+**問題:** DEC-008 適用後も Win Rate 0% が継続。
+盤面は主観化されたが、手順シーケンス（seq）は客観的な座標IDのままだった。
+Mamba は「誰の手か」を識別できない状態。
+
+**解決:** Turn Embedding を導入。
+```python
+# MambaModel.__init__ 内
+self.turn_emb = nn.Embedding(2, d_model)  # 0=Self, 1=Other
+
+# MambaModel.forward 内
+h = self.embedding(seq)
+h = h + self.turn_emb(turn_seq)  # 主観コンテキストの付与
+```
+
+**turn_seq の生成ルール:**
+- 現在の手番から見て、各トークンが「自分(0)か相手(1)か」を判定
+- 例: 黒番視点で [黒の手, 白の手, 黒の手] → turn_seq = [0, 1, 0]
+
+**設計思想との整合:**
+- vocab_size=363 を維持（DEC-002 遵守）
+- Information Continuity を維持（同一座標=同一ID）
+- 最小変更で最大効果
+
+
 ---
 
 ## 5. 評価フレームワーク
