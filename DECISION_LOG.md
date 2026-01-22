@@ -399,3 +399,41 @@ policy_loss = cross_entropy(...) * advantage
 - VII. Performance: Pythonループ排除、preallocation
 
 **参加者:** 山田、Claude（九代目）、Gemini、Copilot
+
+### DEC-012: Phase III.2 完了宣言（2026-01-22）
+
+**決定:** Phase III.2を完了とし、Phase III.3への移行を開始する。
+
+**達成した完了条件:**
+
+| # | 条件 | 結果 |
+|---|------|------|
+| 1 | 相転移（Loss急降下） | ✅ Policy Loss 5.89→4.36（-1.53） |
+| 2 | Win Rate vs Random > 0% | ✅ 後半で複数回達成（3.1%×3回、1.6%×1回） |
+| 3 | パス連打でない正常な対局 | ✅ Pass率 0.0-0.2% |
+
+**技術的成果:**
+
+| 項目 | Before | After |
+|------|--------|-------|
+| 学習速度 | 1.9 g/s | 4.7-5.1 g/s（+168%） |
+| Policy Loss | 5.89 | 4.36 |
+| Final Checkpoint | - | tessera_phase3.2_fixed_final_loss4.41.pth |
+
+**相転移の観測:**
+- Policy Loss < 5.1（Game 31744付近）から Win Rate > 0% が安定出現
+- 初期の散発的勝利（Game 1024, 14080）はノイズと判断
+- Game 31744以降の勝利は「学習成果」と評価
+
+**貢献した決定:**
+- DEC-008: 視点正規化
+- DEC-009: Turn Embedding
+- DEC-011: VectorizedGameHistory
+- PARKING_LOT #16: replay_history_to_boards_fast GPU化
+
+**Phase III.3への引継事項:**
+- DEC-010で策定済みのValue-Guided Policy Improvement
+- Advantage導入、温度調整、サンプル数増加
+
+**参加者:** 山田、Claude（十代目）、Gemini
+
