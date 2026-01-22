@@ -372,3 +372,30 @@ policy_loss = cross_entropy(...) * advantage
 | III.3 | 行動に意味を与える（RL的拡張） |
 
 **参加者:** 山田、Claude（八代目）、Gemini、Copilot
+
+### DEC-011: VectorizedGameHistory 採用（2026-01-22）
+
+**決定:** `Phase3Trainer`の履歴管理を`List[List[Tensor]]`から固定サイズテンソル`VectorizedGameHistory`に置換する。
+
+**背景:**
+- `step()`内のseq_list生成がPythonループで実装されており、GPU効率が低下
+- `game_histories`と`game_move_counts`が別管理で、リセット時のアトミック性が保証されていなかった
+- PARKING_LOT #15として速度改善の優先事項に挙がっていた
+
+**選択肢:**
+- A: 右詰めシフト方式（毎step左シフト+右端追記）
+- B: 循環バッファ方式（Ring Buffer、O(1)書き込み）
+
+**決定理由:**
+- 方式Aを採用。SEQ_LEN=256では十分高速
+- 方式Bは将来SEQ_LEN>1024になった場合の選択肢としてPARKING_LOT #20に記録
+- `move_counts`を統合することでアトミック性を保証（I. Contract原則）
+- Gemini提案のv1.1案をベース、Copilotがレビュー
+
+**実装原則への適合:**
+- I. Contract（Statefulness Boundary）: 履歴と手数のアトミック管理
+- II. Tensor Integrity: `.clone()`使用、Shape検証
+- III. Data Representation: 右詰め整形
+- VII. Performance: Pythonループ排除、preallocation
+
+**参加者:** 山田、Claude（九代目）、Gemini、Copilot

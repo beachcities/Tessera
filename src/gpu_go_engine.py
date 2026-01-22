@@ -246,31 +246,47 @@ class GPUGoEngine:
     # ========================================================
     
     def replay_history_to_boards_fast(self, history: torch.Tensor) -> torch.Tensor:
-        """高速版：履歴から盤面状態を再構成"""
+        """
+        [Vectorized] 履歴から盤面状態を再構成 (One-Hot + Cumsum)
+        
+        Algorithm:
+        1. 手番ごとの石の色（1 or -1）を計算
+        2. move index を One-Hot ベクトルに展開
+        3. 時間軸方向に累積和 (cumsum) を取り、盤面の遷移を一括計算
+        4. 時間軸を1つシフト（boards[t]はt手目 *直前* の状態）
+        
+        Assumptions:
+        - 入力 history は合法手のみを含む（既に石がある場所には打たない）
+        - そのため、加算（Cumsum）は代入（Assignment）と等価になる
+        """
         seq_len = history.size(0)
         device = self.device
         
-        boards = torch.zeros(seq_len, BOARD_SIZE, BOARD_SIZE, 
-                            dtype=torch.float32, device=device)
+        # 1. 手番と石の色を計算
+        turns = torch.arange(seq_len, device=device)
+        stones = torch.where(turns % 2 == 0, 1.0, -1.0)
         
+        # 2. 有効な手（PASS/PAD以外）のマスク作成
         valid_mask = (history < PASS_TOKEN)
+        stones = stones * valid_mask.float()
         
-        if not valid_mask.any():
-            return boards
+        # 3. One-Hot グリッドの作成 [L, 361]
+        safe_moves = history.clone()
+        safe_moves[~valid_mask] = 0
         
-        cumulative = torch.zeros(BOARD_SIZE, BOARD_SIZE, dtype=torch.float32, device=device)
+        grid = torch.zeros(seq_len, BOARD_SIZE * BOARD_SIZE, device=device)
+        grid.scatter_(1, safe_moves.unsqueeze(1), stones.unsqueeze(1))
         
-        for t in range(seq_len):
-            boards[t] = cumulative.clone()
-            
-            if valid_mask[t]:
-                move = history[t].item()
-                row, col = move // BOARD_SIZE, move % BOARD_SIZE
-                stone = 1.0 if t % 2 == 0 else -1.0
-                cumulative[row, col] = stone
+        # 4. 累積和 (Cumsum) で盤面推移を一括計算
+        states = torch.cumsum(grid, dim=0)
         
-        return boards
-    
+        # 5. シフト処理
+        boards_flat = torch.zeros_like(states)
+        boards_flat[1:] = states[:-1]
+        
+        # 6. Reshape [L, 19, 19]
+        return boards_flat.view(seq_len, BOARD_SIZE, BOARD_SIZE)
+
     # ========================================================
     # Visualization (Debug)
     # ========================================================

@@ -16,8 +16,6 @@
 
 | # | 事項 | 提案者 | 補足 |
 |---|------|--------|------|
-| 15 | seq_list生成のベクトル化 | Gemini/Copilot | step()内に残存するPythonループ。padded_seqsをテンソル演算で一気に作るべき |
-| 16 | replay_history_to_boards_fastのGPU化 | Copilot | 学習時に8回/ゲーム呼ばれる。scatter_addで一括処理可能 |
 
 ---
 
@@ -43,6 +41,8 @@
 | 7 | Diffusion/RayCast/Fusionの効果検証 | - | tessera_model.pyに実装済みだが効果は未検証。Policyが動き始めてから検証すべき。Phase III.3で実施 |
 | 8 | history_turnsの「ゲーム開始手番」依存の堅牢化 | Copilot | Phase IIの旧仕様。DEC-009でturn_seqが正式採用されたためほぼ不要。handicap（置碁）対応時に再検討が必要だが、囲碁は必ず先手が黒なのでidx%2で現状は破綻しない |
 | 11 | learn()のcurrent_playerを実データから推定 | Copilot | 現在idx%2で計算。handicap/途中開始/augmentation時に壊れる可能性。履歴から推定する案。Phase III.2は黒から開始固定なので現状は問題なし |
+| 20 | 循環バッファ方式（Ring Buffer）の検討 | Copilot | SEQ_LENが1024超になった場合の選択肢。現在の右詰めシフト方式より効率的。現状SEQ_LEN=256では不要 |
+| 21 | move_countsの意味論をIMPLEMENTATION_PRINCIPLESに明記 | Copilot | move_countsは「総手数」でありSEQ_LENとは独立。将来の短縮履歴運用時に混乱を防ぐ |
 
 ---
 
@@ -54,21 +54,8 @@
 | 12 | PARKING_LOT.mdの永続化 | 2026-01-20 | 六代目Claude。引継文書から移行 |
 | 10 | turn_seq生成のベクトル化 | 2026-01-20 | 七代目Claude。utils.py作成、3箇所適用。1.2→3.2 g/s |
 | 13 | turn_seq生成ロジックの関数共通化 | 2026-01-20 | 七代目Claude。get_turn_sequence()をutils.pyに配置 |
-
----
-
-## 更新履歴
-
-- 2026-01-20: 初版作成（六代目Claude）
-- 2026-01-20: v2改訂（七代目Claude）- 補足情報追加、#13/#14追加、構造改善
-- 2026-01-20: v3改訂（七代目Claude）- #10/#13完了、#15/#16追加（残りのボトルネック）
-
----
-
-## 更新履歴
-
-- 2026-01-20: v3改訂（八代目Claude）- Phase III.3関連項目追加
-
+| 15 | seq_list生成のベクトル化 | 2026-01-22 | 九代目Claude。VectorizedGameHistory導入。DEC-011 |
+| 16 | replay_history_to_boards_fastのGPU化 | 2026-01-22 | 九代目Claude + Gemini。One-Hot + Cumsum方式。1.9→5.1 g/s |
 ---
 
 ## Phase III.3 関連（DEC-010 参照）
@@ -78,3 +65,13 @@
 | 17 | Advantage 導入（Policy Loss 重み付け） | Gemini | `advantage = (winner * perspective) - value.detach()` で勝敗に応じた重み付け。Phase III.3 の核心 |
 | 18 | 温度調整 1.5 → 2.5 | Gemini | 探索の多様性を増加し「偶然の勝ち」を掬い上げる |
 | 19 | LEARN_SAMPLES_PER_GAME 8 → 16 | Gemini | 1ゲームから得られる学習信号を倍増 |
+
+---
+
+## 更新履歴
+
+- 2026-01-20: 初版作成（六代目Claude）
+- 2026-01-20: v2改訂（七代目Claude）- 補足情報追加、#13/#14追加、構造改善
+- 2026-01-20: v3改訂（七代目Claude）- #10/#13完了、#15/#16追加（残りのボトルネック）
+- 2026-01-20: v3改訂（八代目Claude）- Phase III.3関連項目追加
+- 2026-01-22: v4改訂（九代目Claude）- #15完了、#20/#21追加
