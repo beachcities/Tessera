@@ -94,5 +94,9 @@ def quick_eval_from_checkpoint(num_games=64, checkpoint_path=None):
 
 
 if __name__ == "__main__":
-    num_games = int(sys.argv[1]) if len(sys.argv) > 1 else 64
-    quick_eval_from_checkpoint(num_games=num_games)
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--model', default='/app/checkpoints/tessera_phase3.2_fixed_final_loss4.41.pth')
+    parser.add_argument('--games', type=int, default=64)
+    args = parser.parse_args()
+    quick_eval_from_checkpoint(num_games=args.games, checkpoint_path=args.model)

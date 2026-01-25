@@ -1,7 +1,7 @@
 # Tessera (MambaGo) 引き継ぎドキュメント
 
 **Date:** 2026-01-22
-**Status:** Phase III.2 完了、Phase III.3 準備中
+**Status:** Phase III.3 本番学習進行中（v0.3.2）
 
 ---
 
@@ -16,15 +16,54 @@
 | III.1 | TesseraModel統合、方針検討 | ✅ | Tromp-Taylorへ方針転換 |
 | III.2 | Tromp-Taylor + Value Head + 高速化 | ✅ | **相転移達成、Win Rate > 0%** |
 
-### 準備中
+### 進行中
 
 | Phase | 内容 | 状態 | 備考 |
 |-------|------|------|------|
-| III.3 | Value-Guided Policy Improvement | ⏳ | DEC-010で方針策定済み |
+| III.3 | Value-Guided Policy Improvement | 🔄 | v0.3.2で本番学習中 |
 
 ---
 
-## Phase III.2 の成果（2026-01-22 完了）
+## Phase III.3 の状態（2026-01-22）
+
+### 本番学習進行中
+
+| 項目 | 値 |
+|------|-----|
+| バージョン | v0.3.2（Corrected & Stabilized） |
+| 目標ゲーム数 | 100,000 |
+| 速度 | 12.4 g/s（Phase III.2の2.4倍） |
+| 開始チェックポイント | tessera_phase3.2_fixed_final_loss4.41.pth |
+
+### v0.3.2 で修正されたバグ
+
+| バグ | 症状 | 原因 | 修正 |
+|------|------|------|------|
+| Actor-Critic発散 | PG Loss負の無限大 | 負のAdvantageで勾配爆発 | Positive Advantage Masking |
+| Off-by-One Error | Win Rate 0%継続 | board_indices = sample_indices - 1 | board_indices = sample_indices |
+| 形状エラー | IndexError | 不要なunsqueeze(1) | 削除 |
+| Logits次元エラー | IndexError | policy_logits[:, -1, :] | policy_logits |
+
+### 初期ログ（Game 1024時点）
+
+| 指標 | 値 | 評価 |
+|------|-----|------|
+| PG Loss | 1.49 | ✅ 正の値（発散していない） |
+| CE Loss | 5.44 | ✅ 正常範囲 |
+| Entropy | 5.15 | ✅ 探索段階として健全 |
+| Win Rate | 0.0% | ⏳ 相転移前（想定内） |
+
+### Phase III.3 完了条件
+
+| # | 条件 | 現状 |
+|---|------|------|
+| 1 | 発散なし（CE < 10） | ✅ 達成（CE 5.44） |
+| 2 | Win Rate vs Random > 0% | ⏳ 未達（学習中） |
+| 3 | Phase III.2 以上の性能 | ⏳ 未確認 |
+
+---
+
+## Phase III.2 の成果（参考）
 
 ### 達成した完了条件
 
@@ -41,49 +80,6 @@
 | 学習速度 | 1.9 g/s | 4.7-5.1 g/s | +168% |
 | Policy Loss | 5.89 | 4.36 | -1.53 |
 | Total Loss | 6.30 | 4.41 | -1.89 |
-
-### チェックポイント
-
-| ファイル | Loss | 状態 |
-|----------|------|------|
-| `tessera_phase3.2_fixed_final_loss4.41.pth` | 4.41 | ✅ **Phase III.2 完了版** |
-| `tessera_phase3.2_fixed_final_loss5.91.pth` | 5.91 | 旧版（相転移前） |
-| `tessera_phase3.2_final_loss3.58.pth` | 3.58 | ⚠️ 偽成功（パス連打） |
-
-### 貢献した決定
-
-- **DEC-008**: 視点正規化（current_board * perspective）
-- **DEC-009**: Turn Embedding（自分/相手の識別）
-- **DEC-011**: VectorizedGameHistory（履歴管理のテンソル化）
-- **#16**: replay_history_to_boards_fast GPU化（One-Hot + Cumsum方式）
-
----
-
-## 重要な技術的発見
-
-### 相転移の観測（Phase III.2）
-
-- Policy Loss < 5.1（Game 31744付近）から Win Rate > 0% が安定出現
-- 初期の散発的勝利（Game 1024, 14080）はノイズ
-- Game 31744以降の勝利は「学習成果」
-
-### GPU化による高速化（Phase III.2）
-
-- VectorizedGameHistory: Pythonループ排除、アトミック管理
-- One-Hot + Cumsum: replay_history_to_boards_fastの完全ベクトル化
-- 結果: 1.9 g/s → 5.1 g/s（2.7倍）
-
-### パス連打による偽成功（Phase III.2 初期）
-
-**問題:** Loss 3.58 達成も Win Rate 0%
-**原因:** パス連打でゲーム即終了、盤面学習なし
-**教訓:** **Loss の低下を無批判に喜ばない。Win Rate で検証必須。**
-
-### MambaStateCapture の削除（Phase II）
-
-**問題:** ELO 評価時に OOM が頻発
-**原因:** forward hook が hidden state を保持し続けメモリリーク
-**解決:** MambaStateCapture クラスを完全削除
 
 ---
 
@@ -109,10 +105,22 @@
 | `src/gpu_go_engine.py` | GPUGoEngine（Tromp-Taylor版、GPU化済み） | III | ✅ |
 | `src/model.py` | MambaModel（4層、1.9Mパラメータ） | II | ✅ |
 | `src/tessera_model.py` | TesseraModel（Mamba + Value Head） | III | ✅ |
-| `src/train_phase3_2_fixed.py` | Fixed版学習スクリプト v0.3.0 | III | ✅ |
+| `src/train_phase3_2_fixed.py` | Phase III.2 学習スクリプト v0.3.0 | III | ✅ |
+| `src/train_phase3_3.py` | Phase III.3 学習スクリプト v0.3.2 | III | ✅ |
+| `src/debug_batch_semantics.py` | Semantic Sanity Check | III | ✅ |
 | `src/chain_utils.py` | GPU地計算（flood-fill） | III | ✅ |
 | `src/utils.py` | get_turn_sequence等のユーティリティ | III | ✅ |
 | `src/eval_quick.py` | 簡易評価（vs Random） | III | ✅ |
+
+---
+
+## チェックポイント
+
+| ファイル | Loss | 状態 |
+|----------|------|------|
+| `tessera_phase3.2_fixed_final_loss4.41.pth` | 4.41 | ✅ Phase III.2 完了版、III.3 開始点 |
+| `tessera_phase3.2_fixed_final_loss5.91.pth` | 5.91 | 旧版（相転移前） |
+| `tessera_phase3.2_final_loss3.58.pth` | 3.58 | ⚠️ 偽成功（パス連打） |
 
 ---
 
@@ -122,16 +130,11 @@ cd ~/GoMamba_Local
 docker compose up -d
 docker compose exec tessera bash
 
-# Phase III.2 完了版の評価
-python3.10 -c "
-import torch
-from tessera_model import TesseraModel
-from eval_quick import quick_eval
+# 学習状況確認
+tail -f ~/GoMamba_Local/training_phase3_3.log
 
-model = TesseraModel().to('cuda')
-model.load_state_dict(torch.load('/app/checkpoints/tessera_phase3.2_fixed_final_loss4.41.pth'), strict=False)
-win_rate = quick_eval(model, device='cuda', num_games=256, verbose=True)
-"
+# Phase III.3 学習停止
+docker compose exec tessera pkill -f train_phase3_3.py
 ```
 
 ---
@@ -148,7 +151,7 @@ TesseraModel
 └── ValueHead (MLP) → 勝敗予測 [-1, +1]
 ```
 
-### 学習ループ（v0.3.0）
+### Phase III.3 学習ループ（v0.3.2）
 ```
 VectorizedGameHistory (Preallocated Tensor)
        ↓
@@ -157,6 +160,10 @@ GPUGoEngine.play_batch()
 replay_history_to_boards_fast() [One-Hot + Cumsum]
        ↓
 TesseraModel.forward() [Policy + Value]
+       ↓
+Advantage計算 (Winner - Value)
+       ↓
+Positive Advantage Masking（負を除外）
        ↓
 Loss計算 + Backward
 ```
@@ -170,20 +177,39 @@ Loss計算 + Backward
 | `docs/DESIGN_SPEC_PHASE_II.md` | Phase II 設計仕様 |
 | `docs/DESIGN_SPEC_PHASE_III.md` | Phase III 設計仕様 |
 | `docs/PHASE_III_2_RESULTS.md` | Phase III.2 実験結果 |
-| `docs/KNOWN_TRAPS.md` | 既知の罠（TRAP-001〜009） |
+| `docs/KNOWN_TRAPS.md` | 既知の罠（TRAP-001〜011） |
 | `docs/PARKING_LOT.md` | 保留事項と完了事項 |
-| `docs/IMPLEMENTATION_PRINCIPLES.md` | 実装原則（Copilot策定） |
-| `DECISION_LOG.md` | 決定記録（DEC-001〜012） |
+| `docs/IMPLEMENTATION_PRINCIPLES.md` | 実装原則（Active Shape Guarding追加） |
+| `DECISION_LOG.md` | 決定記録（DEC-001〜013） |
+
+---
+
+## 重要な技術的発見
+
+### Off-by-One Error（Phase III.3）
+
+**問題:** バッチ化時に `board_indices = sample_indices - 1` としていた
+**症状:** Win Rate 0% が継続（相手の最後の手が見えない状態で予測）
+**検証:** `debug_batch_semantics.py` で盤面可視化
+**修正:** `board_indices = sample_indices`
+**教訓:** 形状が合っていても意味がズレていれば学習は進まない（Semantic Sanity Check）
+
+### Actor-Critic Divergence（Phase III.3）
+
+**問題:** 負のAdvantageで勾配爆発
+**症状:** PG Loss負の無限大、CE > 23
+**原因:** `∂/∂p(-ln p) = -1/p` は `p→0` で無限大
+**修正:** Positive Advantage Masking（負のAdvantageを学習対象から除外）
 
 ---
 
 ## 次のステップ
 
-### Phase III.3（DEC-010 参照）
+### 学習完了後の確認事項
 
-1. **Advantage導入** - Policy Lossに勝敗重み付け
-2. **温度調整** - 1.5 → 2.5 で探索多様性向上
-3. **サンプル数増加** - 8 → 16
+1. Win Rate > 0% の達成確認
+2. Phase III.2 (Loss 4.41) との性能比較
+3. チェックポイント保存
 
 ### 長期目標
 
@@ -213,3 +239,44 @@ Loss計算 + Backward
 *"Le symbole donne à penser."* — Paul Ricœur
 
 *The Serpent awaits.*
+
+---
+
+## Phase III.3 更新（2026-01-24）
+
+### 現在の状態
+
+| 項目 | 状態 |
+|------|------|
+| Phase | III.3 Phase 1 完了 |
+| バージョン | v3.4 (train_phase3_4_robust.py) |
+| 達成 | 10,000ゲーム完走 |
+| 最終モデル | tessera_phase3.3_final.pth |
+| 次の目標 | Phase 2（20,000ゲーム） |
+
+### 主要機能（v3.4）
+
+- **Atomic Checkpoint Save**: 一時ファイル経由の安全な保存
+- **Signal Handling**: SIGTERM安全停止
+- **Surgical Gradient Scaling**: 特定層（x_proj）の個別クリップ
+- **Data Guard**: Advantage Clipping（±10.0）、Per-sample Loss Cap（10.0）
+- **Debug Context**: 緊急停止時の完全状態保存
+
+### 最適パラメータ（v3.4）
+
+| パラメータ | 値 |
+|------------|-----|
+| LEARNING_RATE | 2.5e-6 |
+| BATCH_SIZE | 16 |
+| GRADIENT_CLIP_NORM | 0.5 |
+| PG_LOSS_CLIP | 4.0 |
+| GUARD_STOP | 200.0 |
+| GUARD_EMERGENCY | 150.0 |
+| GUARD_WARN | 50.0 |
+
+### チェックポイント
+
+| ファイル | 用途 |
+|----------|------|
+| tessera_phase3.3_final.pth | Phase 1完了、Phase 2初期重み |
+| archive_phase3.3/*.pth | クラッシュ時チェックポイント（解析用） |

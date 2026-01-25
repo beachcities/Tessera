@@ -437,3 +437,109 @@ policy_loss = cross_entropy(...) * advantage
 
 **参加者:** 山田、Claude（十代目）、Gemini
 
+
+### DEC-013: Phase III.3 v0.3.2 修正（2026-01-22）
+
+**決定:** Phase III.3 の学習スクリプトを v0.3.2 に更新し、4つのバグを修正する。
+
+**背景:**
+
+Phase III.3（Actor-Critic）導入後、以下の問題が発生：
+1. PG Loss が負の無限大に発散（v0.2.1）
+2. 発散は止まったが Win Rate 0% が継続
+
+**発見されたバグと修正:**
+
+| バグ | 原因 | 修正 |
+|------|------|------|
+| Actor-Critic発散 | 負のAdvantageで勾配爆発 | Positive Advantage Masking |
+| Off-by-One Error | `board_indices = sample_indices - 1` | `board_indices = sample_indices` |
+| 形状エラー | 不要な`unsqueeze(1)` | 削除 |
+| Logits次元エラー | `policy_logits[:, -1, :]` | `policy_logits` |
+
+**検証方法:**
+
+1. `debug_batch_semantics.py` で盤面可視化（Semantic Sanity Check）
+2. 短いテスト（500ゲーム）でクラッシュなし確認
+3. CE Loss が正常範囲（5.0付近）であることを確認
+
+**決定理由:**
+
+- Gemini の診断（発散原因、Off-by-One疑い）が正確だった
+- 検証スクリプトで Off-by-One を確定
+- 形状エラーは実行時に発見・修正
+
+**結果:**
+
+- v0.3.2 で本番学習開始
+- 速度 12.4 g/s（Phase III.2 の 2.4倍）
+- CE Loss 5.44、PG Loss 1.49（正常）
+
+**参加者:** 山田、Claude（十三代目）、Gemini
+
+
+---
+
+## DEC-014: Phase III.3 Mamba Spike の克服と堅牢化
+
+**日付**: 2026-01-24
+**決定者**: Gemini, Copilot, Claude（十六代目）
+
+### 背景
+
+Phase 1（10,000ゲーム）学習中、Game 8512付近で勾配爆発による停止が発生。
+
+### 技術的詳細
+
+- **症状**: mamba_layers.1.x_proj.weightの勾配ノルムが131.85に急上昇、全体ノルム161.31
+- **原因**: バッチ内の単一サンプル（Index 8）が異常な損失（-23.71）を生成。データ由来の外れ値。
+
+### 対策の試行錯誤
+
+1. **Global Defense（失敗）**: Advantage Clipping（±10.0）とPer-sample Loss Cap（10.0）→ 再発（Norm ~159）
+2. **Surgical Fix（成功）**: 層別勾配スケーリング。特定層（mamba_layers.*.x_proj）が閾値を超えた場合、その層だけを縮小。
+
+### パラメータ変更
+
+| パラメータ | 変更前 | 変更後 | 理由 |
+|------------|--------|--------|------|
+| GUARD_STOP | 100.0 | 200.0 | 一過性スパイク許容 |
+| GUARD_EMERGENCY | なし | 150.0 | 緊急保存ライン新設 |
+| GUARD_WARN | 25.0 | 50.0 | ノイズ低減 |
+| PG_LOSS_CLIP | 0.2 | 4.0 | PPO標準値へ復旧 |
+
+### 決定事項
+
+Mambaアーキテクチャ特有の脆弱性に対し、Global Clippingではなく**Surgical Gradient Scaling**を標準実装とする。
+
+---
+
+### DEC-015: Docker→venv環境移行（2026-01-24/25）
+
+**決定:** Docker環境からvenv環境へ一時的に移行する。
+
+**背景:**
+- Docker環境でImportError等が発生
+- 即時のデバッグと課題解決が必要だった
+- Copilot主導で移行を実施
+
+**注意:** この決定は事後記録である。本来は移行前にDECISION_LOGに記録されるべきだった。
+
+**移行内容:**
+- CUDA Toolkit 12.8をインストール（PyTorchのcu128と整合）
+- mamba_ssm v2.3.0をビルド・インストール
+- 速度: 3.9 g/s（LSTMフォールバック）→ 11-12 g/s（Mamba有効）
+
+**制約:**
+- venvは一時避難所であり、Docker復帰がゴール
+- venv維持を選択肢にしない
+
+**Docker復帰条件:**
+- venvで確立した構成（CUDA 12.8 + mamba_ssm v2.3.0）をDockerfileに反映
+- Docker環境で同等のスループット（12+ g/s）が出ることを確認
+
+**教訓:**
+- 環境変更は事前にDECISION_LOGに記録せよ
+- 「一時的」な変更も正式な決定として扱え
+
+**参加者:** Copilot（主導）、Gemini、Claude（事後承認）、山田

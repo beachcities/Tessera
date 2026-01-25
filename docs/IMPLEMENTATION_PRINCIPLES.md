@@ -49,6 +49,8 @@ PyTorch は寛容で、曖昧さを許容し、
 - **Shape & Semantic Documentation** — 形状と意味をコメントで文書化する
 - **Device Integrity** — デバイスの一貫性を保つ
 - **Gradient Flow Integrity** — 勾配の流れを意図通りに保つ
+- **Active Shape Guarding** — モデル入力やLoss計算などの重要境界（Critical Boundaries）では、`assert tensor.shape == (...)` を挿入し、形状不整合を即座にクラッシュさせる（Fail-Fast）
+- **Explicit Broadcasting** — `unsqueeze` や `view` による次元操作を行う直前・直後には、操作の意図と結果形状を明示する。暗黙のブロードキャストに頼らない
 
 ---
 

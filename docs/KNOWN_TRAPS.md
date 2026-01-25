@@ -390,3 +390,145 @@ TRAP-008 と TRAP-009 は**両方とも解決しないと Win Rate は改善し�
 5. Copilot が「盤面は主観、履歴は客観」という構造的問題を言語化
 6. Claude が Tessera 思想との相性を評価表で整理
 7. 三者一致で Option B（Turn Embedding）を採用
+
+## TRAP-010: Actor-Critic Divergence（負の強化による発散）
+
+**発見日:** 2026-01-22
+**深刻度:** 🔴 Critical
+**状態:** ✅ 解決（v0.3.0）
+
+### 症状
+
+- PG Loss が負の無限大に発散
+- CE Loss が ln(362)≈5.89 を超えて 23+ に達する
+- Win Rate 0% のまま
+
+### 原因
+
+負の Advantage による「確率0への爆発」。
+
+- `pg_loss = CE × Advantage` で、Advantage が負の場合、Loss は CE を最大化しようとする
+- クロスエントロピーの勾配 `∂/∂p(-ln p) = -1/p` は `p→0` で無限大に爆発
+- 「勝った手を伸ばす力」より「負けた手を罰する力」が圧倒的に強い
+- モデルは「全確率を0にしたい」という不可能な解に向かって暴走
+
+### 対策
+
+**Positive Reinforcement Only**: 負の Advantage を学習対象から除外
+```python
+if self.config.POSITIVE_ADV_ONLY:
+    valid_adv_mask = (advantages > 0).float()
+    final_weights = weights * valid_adv_mask
+```
+
+### 教訓
+
+> **「強化学習で負の報酬を使う場合、勾配の非対称性に注意せよ」**
+
+---
+
+## TRAP-011: Off-by-One Error in Batch Indexing（バッチ化時のインデックスズレ）
+
+**発見日:** 2026-01-22
+**深刻度:** 🔴 Critical
+**状態:** ✅ 解決（v0.3.1）
+
+### 症状
+
+- 発散は止まったが Win Rate 0% が継続
+- CE Loss は正常範囲（5.0付近）
+- 学習は進んでいるように見えるが、性能が向上しない
+
+### 原因
+
+`replay_history_to_boards_fast` の仕様誤解によるインデックスズレ。
+
+- `boards[t]` は「moves[t]を打つ**前**」の状態を返す
+- コードでは `board_indices = sample_indices - 1` としていた
+- これにより「1手前の盤面」を見て予測させていた
+- **相手の最後の手が見えない状態で、次の手を予測させていた**
+
+### 検証方法
+
+`debug_batch_semantics.py` で盤面を可視化：
+```bash
+docker compose exec tessera python3 /app/src/debug_batch_semantics.py
+```
+
+Move 4 を予測する際に4つの石が見えるべきところ、3つしか見えなかった。
+
+### 対策
+```python
+# 修正前（誤り）
+board_indices = sample_indices - 1
+
+# 修正後（正しい）
+board_indices = sample_indices
+```
+
+### 教訓
+
+> **「形状が合っていても、中身（意味）がズレていれば学習は進まない。Semantic Sanity Check を習慣化せよ」**
+
+
+---
+
+## TRAP-012: The Mamba Spike（局所的勾配爆発）
+
+**発見日**: 2026-01-24
+**発見者**: Gemini, Copilot
+
+### 症状
+
+- 学習全体は安定しているのに、突然Grad Maxが100〜200に跳ね上がり自動停止
+- 全体のLossは正常範囲でも、特定の層（mamba_layers.x_proj）の勾配ノルムだけが突出
+
+### 原因
+
+- Mambaのx_proj（Input Projection）層は、入力データの外れ値（極端なAdvantageや予期せぬ盤面パターン）に対して敏感
+- PyTorchのclip_grad_norm_（Global Clip）は全層を一律に縮小するため、1つの層だけが突出している場合、健全な層の学習まで阻害する
+
+### 対策
+
+1. **Surgical Gradient Scaling**: Global Clipの前に、問題の層だけを個別にクリップ
+2. **Data Hygiene**: AdvantageやLoss自体に上限（Cap）を設け、入力値の爆発を防ぐ
+
+### 教訓
+
+- Mamba/Transformers混成モデルでは、**層ごとの勾配ノルムを監視**することが不可欠
+- Global Normだけでは問題の所在が見えない
+- 「全体が正常でも、局所が暴走する」ケースに注意
+
+---
+
+## TRAP-013: Resume Without Policy（運用方針なきResume）
+
+**発見日**: 2026-01-24
+**発見者**: Gemini, Copilot, Claude（十六代目）
+
+### 症状
+
+- チェックポイントからResumeした直後に勾配発散
+- weights-only、LR低下、AMP無効化、クリップ強化を試みても回復不能
+- 複数のemergency checkpointが生成される
+
+### 原因
+
+- Resume時のデフォルトがfull state（Optimizer状態含む）だった
+- チェックポイントの健全性チェック（Norm分布、Param Groups等）がなかった
+- 「とりあえず再開」という属人的判断で進めてしまった
+- 実装方針（How）はあったが、運用方針（Policy）がなかった
+
+### 対策
+
+1. **Resume Policy制定**: デフォルトをweights-onlyに。full state継承には明示的承認と理由を必須化
+2. **safe_start**: 起動前チェックリストを強制するラッパー
+3. **Safety Mode**: Resume後Nゲームは低LR・強クリップを自動適用
+4. **Kill Switch**: 閾値超過で自動停止する監視デーモン
+
+### 教訓
+
+- 「実装」だけでなく「運用」も明文化せよ
+- Parking Lotの安全策を「いつかやる」で後回しにするな
+- 「急がば回れ」—基盤を固めてから進め
+- 貴重な計算リソースと時間を、確認漏れで失うな
